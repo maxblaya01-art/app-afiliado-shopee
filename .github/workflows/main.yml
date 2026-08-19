@@ -24,7 +24,6 @@ jobs:
 
       - name: Criar estrutura Android
         run: |
-          rm -rf android
           flutter create --platforms=android .
 
       - name: Instalar dependências
