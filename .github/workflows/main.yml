@@ -26,13 +26,34 @@ jobs:
         run: |
           flutter create --platforms=android .
 
+      - name: Corrigir Google ML Kit
+        run: |
+          cat >> android/app/build.gradle <<'EOF'
+
+          dependencies {
+              implementation 'com.google.mlkit:text-recognition-chinese:16.0.0'
+              implementation 'com.google.mlkit:text-recognition-devanagari:16.0.0'
+              implementation 'com.google.mlkit:text-recognition-japanese:16.0.0'
+              implementation 'com.google.mlkit:text-recognition-korean:16.0.0'
+          }
+          EOF
+
+      - name: Criar regras R8
+        run: |
+          cat > android/app/proguard-rules.pro <<'EOF'
+          -keep class com.google.mlkit.vision.text.chinese.** { *; }
+          -keep class com.google.mlkit.vision.text.devanagari.** { *; }
+          -keep class com.google.mlkit.vision.text.japanese.** { *; }
+          -keep class com.google.mlkit.vision.text.korean.** { *; }
+          EOF
+
       - name: Instalar dependências
         run: |
           flutter pub get
 
       - name: Compilar APK
         run: |
-          flutter build apk --release --no-shrink
+          flutter build apk --release
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
