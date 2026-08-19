@@ -7,149 +7,178 @@ on:
       - main
 
 jobs:
-  build:
+  build-apk:
     name: Gerar APK
     runs-on: ubuntu-latest
 
     steps:
+
+      # 1. Baixar o código do projeto
       - name: Baixar código
         uses: actions/checkout@v4
 
+      # 2. Configurar Java
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # 3. Configurar Flutter
       - name: Configurar Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.39.0"
           channel: stable
           cache: true
 
-      - name: Criar estrutura Android
-        run: |
-          flutter create --platforms=android --project-name app_afiliado_shopee .
-
-      - name: Corrigir image_picker
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("pubspec.yaml")
-          s = p.read_text()
-
-          s = s.replace("image_picker: ^1.2.3", "image_picker: ^1.2.2")
-          s = s.replace("image_picker: 1.2.3", "image_picker: 1.2.2")
-
-          p.write_text(s)
-          PY
-
-      - name: Corrigir R8 e Gradle
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          # Procura o arquivo correto do Android.
-          kts = Path("android/app/build.gradle.kts")
-          groovy = Path("android/app/build.gradle")
-
-          if kts.exists():
-              p = kts
-              s = p.read_text()
-
-              # Desativa minificação e redução de recursos.
-              s = s.replace(
-                  "isMinifyEnabled = true",
-                  "isMinifyEnabled = false"
-              )
-
-              s = s.replace(
-                  "isShrinkResources = true",
-                  "isShrinkResources = false"
-              )
-
-              # Caso não exista nenhuma configuração de minificação,
-              # cria uma configuração de release.
-              if "isMinifyEnabled" not in s:
-                  marker = "buildTypes {"
-                  if marker in s:
-                      s = s.replace(
-                          marker,
-                          """buildTypes {
-          release {
-              isMinifyEnabled = false
-              isShrinkResources = false
-          }
-          """,
-                          1
-                      )
-
-              p.write_text(s)
-
-          elif groovy.exists():
-              p = groovy
-              s = p.read_text()
-
-              s = s.replace(
-                  "minifyEnabled true",
-                  "minifyEnabled false"
-              )
-
-              s = s.replace(
-                  "shrinkResources true",
-                  "shrinkResources false"
-              )
-
-              if "minifyEnabled" not in s:
-                  marker = "buildTypes {"
-                  if marker in s:
-                      s = s.replace(
-                          marker,
-                          """buildTypes {
-          release {
-              minifyEnabled false
-              shrinkResources false
-          }
-          """,
-                          1
-                      )
-
-              p.write_text(s)
-
-          else:
-              raise SystemExit(
-                  "ERRO: android/app/build.gradle.kts e android/app/build.gradle não encontrados."
-              )
-
-          print("R8/minificação configurado corretamente.")
-          PY
-
-      - name: Criar regras ProGuard
-        run: |
-          cat > android/app/proguard-rules.pro <<'EOF'
-          # Google ML Kit
-          -dontwarn com.google.mlkit.**
-          -keep class com.google.mlkit.** { *; }
-
-          # Text Recognition
-          -dontwarn com.google.mlkit.vision.text.**
-          -keep class com.google.mlkit.vision.text.** { *; }
-
-          # Image Picker
-          -dontwarn io.flutter.plugins.imagepicker.**
-          -keep class io.flutter.plugins.imagepicker.** { *; }
-          EOF
-
-      - name: Instalar dependências
-        run: |
-          flutter clean
-          flutter pub get
-
+      # 4. Mostrar versões
       - name: Verificar Flutter
         run: |
           flutter --version
+          dart --version
+          java -version
+
+      # 5. Criar estrutura Android
+      - name: Criar estrutura Android
+        run: |
+          if [ ! -f "android/app/build.gradle.kts" ] && [ ! -f "android/app/build.gradle" ]; then
+            flutter create --platforms=android .
+          fi
+
+      # 6. Corrigir configuração Android
+      - name: Corrigir configuração Android
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          gradle_kts = Path("android/app/build.gradle.kts")
+          gradle = Path("android/app/build.gradle")
+
+          # ============================================================
+          # BUILD.GRADLE.KTS
+          # ============================================================
+          if gradle_kts.exists():
+              text = gradle_kts.read_text()
+
+              # Desativa minificação/R8 no build Release
+              text = text.replace(
+                  'isMinifyEnabled = true',
+                  'isMinifyEnabled = false'
+              )
+
+              text = text.replace(
+                  'minifyEnabled = true',
+                  'minifyEnabled = false'
+              )
+
+              # Garante que o bloco release tenha minificação desligada
+              if 'isMinifyEnabled = false' not in text and 'minifyEnabled = false' not in text:
+                  marker = 'buildTypes {'
+                  if marker in text:
+                      text = text.replace(
+                          marker,
+                          marker + '\n        release {\n            isMinifyEnabled = false\n        }',
+                          1
+                      )
+
+              gradle_kts.write_text(text)
+
+          # ============================================================
+          # BUILD.GRADLE
+          # ============================================================
+          elif gradle.exists():
+              text = gradle.read_text()
+
+              text = text.replace(
+                  'minifyEnabled true',
+                  'minifyEnabled false'
+              )
+
+              text = text.replace(
+                  'minifyEnabled = true',
+                  'minifyEnabled = false'
+              )
+
+              gradle.write_text(text)
+
+          print("Configuração Android corrigida.")
+          PY
+
+      # 7. Criar regras ProGuard
+      - name: Criar regras ProGuard
+        shell: bash
+        run: |
+          mkdir -p android/app
+
+          cat > android/app/proguard-rules.pro <<'EOF'
+          # ============================================================
+          # GOOGLE ML KIT
+          # ============================================================
+
+          -dontwarn com.google.mlkit.**
+          -dontwarn com.google.android.gms.**
+          -dontwarn javax.annotation.**
+          -dontwarn org.tensorflow.**
+
+          -keep class com.google.mlkit.** { *; }
+          -keep class com.google.android.gms.** { *; }
+
+          # ============================================================
+          # IMAGE PICKER
+          # ============================================================
+
+          -keep class io.flutter.plugins.imagepicker.** { *; }
+
+          # ============================================================
+          # FLUTTER PLUGINS
+          # ============================================================
+
+          -keep class io.flutter.** { *; }
+          EOF
+
+      # 8. Corrigir AndroidManifest
+      - name: Configurar AndroidManifest
+        shell: bash
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+
+          if [ -f "$MANIFEST" ]; then
+            if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
+              sed -i '/<manifest/a\    <uses-permission android:name="android.permission.INTERNET"/>' "$MANIFEST"
+            fi
+          fi
+
+      # 9. Limpar projeto
+      - name: Limpar projeto
+        run: |
+          flutter clean
+
+      # 10. Instalar dependências
+      - name: Instalar dependências
+        run: |
+          flutter pub get
+
+      # 11. Verificar dependências
+      - name: Verificar dependências
+        run: |
           flutter pub deps
 
+      # 12. Compilar APK
       - name: Compilar APK
         run: |
           flutter build apk --release --no-tree-shake-icons
 
+      # 13. Verificar APK
+      - name: Verificar APK
+        run: |
+          echo "======================================"
+          echo "APK GERADO:"
+          echo "======================================"
+          find build/app/outputs/flutter-apk -type f -name "*.apk" -print
+          ls -lh build/app/outputs/flutter-apk/
+
+      # 14. Disponibilizar APK
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
@@ -159,6 +188,6 @@ jobs:
 
       - name: Finalizado
         run: |
-          echo "===================================="
-          echo "APK GERADO COM SUCESSO!"
-          echo "===================================="
+          echo "======================================"
+          echo "       APK GERADO COM SUCESSO"
+          echo "======================================"
