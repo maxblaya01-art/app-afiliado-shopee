@@ -82,10 +82,8 @@ class _HomePageState extends State<HomePage> {
         _carregando = true;
       });
 
-      // Primeiro lê o texto.
       await _lerTextoDaImagem(arquivo.path);
 
-      // Depois faz somente o RECORTE.
       final File? recortada =
           await _recortarFotoPrincipal(arquivo.path);
 
@@ -109,14 +107,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // RECORTAR SOMENTE A FOTO PRINCIPAL
+  // RECORTAR FOTO PRINCIPAL
   //
   // NÃO REMOVE FUNDO.
+  // SOMENTE RECORTA A REGIÃO DA FOTO.
   // ============================================================
 
-  Future<File?> _recortarFotoPrincipal(
-    String caminho,
-  ) async {
+  Future<File?> _recortarFotoPrincipal(String caminho) async {
     try {
       final File arquivo = File(caminho);
 
@@ -203,9 +200,7 @@ class _HomePageState extends State<HomePage> {
   // OCR
   // ============================================================
 
-  Future<void> _lerTextoDaImagem(
-    String caminho,
-  ) async {
+  Future<void> _lerTextoDaImagem(String caminho) async {
     final TextRecognizer reconhecedor =
         TextRecognizer(
       script: TextRecognitionScript.latin,
@@ -216,9 +211,7 @@ class _HomePageState extends State<HomePage> {
           InputImage.fromFilePath(caminho);
 
       final RecognizedText resultado =
-          await reconhecedor.processImage(
-        imagem,
-      );
+          await reconhecedor.processImage(imagem);
 
       final String texto =
           resultado.text.trim();
@@ -249,9 +242,7 @@ class _HomePageState extends State<HomePage> {
 
       for (int i = 0; i < linhas.length; i++) {
         final Match? match =
-            regexPreco.firstMatch(
-          linhas[i],
-        );
+            regexPreco.firstMatch(linhas[i]);
 
         if (match != null) {
           preco = match.group(0) ?? '';
@@ -266,53 +257,149 @@ class _HomePageState extends State<HomePage> {
       }
 
       // ==========================================================
-      // VERIFICAÇÃO DE LINHA LIXO
+      // FUNÇÃO PARA IDENTIFICAR TEXTO QUE NÃO É PRODUTO
       // ==========================================================
 
       bool linhaEhLixo(String linha) {
-        final String original =
-            linha.trim();
+        String t =
+            linha.toLowerCase().trim();
 
-        final String t =
-            _normalizarParaComparacao(
-          original,
+        // Remove espaços duplicados.
+        t = t.replaceAll(
+          RegExp(r'\s+'),
+          ' ',
         );
 
-        final List<String> ignorar = [
-          'shopee',
-          'comprar',
-          'oferta',
-          'promocao',
-          'frete gratis',
-          'cupom',
-          'avaliacoes',
-          'vendido',
-          'parcelado',
-          'entrega',
-          'compartilhar',
-          'adicionar ao carrinho',
-          'comprar agora',
-          'comissao extra',
-          'comissaoextra',
-          'comissao',
-          'aprenda com outros criadores',
-          'compartilhe para ganhar',
-          'chat',
-          'favoritar',
-        ];
+        // --------------------------------------------------------
+        // COMISSÃO
+        // --------------------------------------------------------
 
-        for (final String palavra in ignorar) {
-          if (t.contains(palavra)) {
-            return true;
-          }
+        if (t.contains('comissão extra') ||
+            t.contains('comissao extra') ||
+            t.contains('comissãoextra') ||
+            t.contains('comissaoextra') ||
+            t.contains('comissão') ||
+            t.contains('comissao')) {
+          return true;
         }
 
-        // Percentual.
+        // --------------------------------------------------------
+        // PORCENTAGEM
+        // --------------------------------------------------------
+
         if (RegExp(
           r'\d+[,.]?\d*\s*%',
         ).hasMatch(t)) {
           return true;
         }
+
+        // --------------------------------------------------------
+        // PREÇO
+        // --------------------------------------------------------
+
+        if (regexPreco.hasMatch(t)) {
+          return true;
+        }
+
+        // --------------------------------------------------------
+        // INFORMAÇÕES DE VENDA
+        // --------------------------------------------------------
+
+        final List<String> palavrasVenda = [
+          'afiliados',
+          'afiliado',
+          'vendido',
+          'vendidos',
+          'vendas',
+          'mil vendidos',
+          'mil+ vendido',
+          'mil+ vendidos',
+          'avaliação',
+          'avaliacao',
+          'avaliações',
+          'avaliacoes',
+          'estrelas',
+          'nota',
+          'reviews',
+          'review',
+        ];
+
+        for (final String palavra
+            in palavrasVenda) {
+          if (t.contains(palavra)) {
+            return true;
+          }
+        }
+
+        // --------------------------------------------------------
+        // OUTROS TEXTOS DA SHOPEE
+        // --------------------------------------------------------
+
+        final List<String> ignorar = [
+          'shopee',
+          'comprar',
+          'oferta',
+          'promoção',
+          'promocao',
+          'frete grátis',
+          'frete gratis',
+          'cupom',
+          'parcelado',
+          'entrega',
+          'compartilhar',
+          'adicionar ao carrinho',
+          'comprar agora',
+          'aprenda com outros criadores',
+          'aprenda com outros',
+          'outros criadores',
+          'compartilhe para ganhar',
+          'compartilhe',
+          'para ganhar',
+          'ganhar',
+          'chat',
+          'favoritar',
+          'favorito',
+          'seguir',
+          'seguindo',
+          'ver mais',
+          'ver tudo',
+          'mais vendidos',
+          'ofertas',
+          'sem juros',
+          'retirada',
+          'entrega grátis',
+          'entrega gratis',
+        ];
+
+        for (final String palavra
+            in ignorar) {
+          if (t.contains(palavra)) {
+            return true;
+          }
+        }
+
+        // --------------------------------------------------------
+        // TEXTOS QUE COMEÇAM COM NÚMEROS
+        // Normalmente são informações da Shopee.
+        // --------------------------------------------------------
+
+        if (RegExp(
+          r'^\d+\s+',
+        ).hasMatch(t)) {
+          if (t.contains('dia') ||
+              t.contains('dias') ||
+              t.contains('hora') ||
+              t.contains('horas') ||
+              t.contains('parcela') ||
+              t.contains('unidade') ||
+              t.contains('vend')) {
+            return true;
+          }
+        }
+
+        // --------------------------------------------------------
+        // LINHAS MUITO CURTAS
+        // --------------------------------------------------------
 
         if (t.length < 5) {
           return true;
@@ -322,57 +409,143 @@ class _HomePageState extends State<HomePage> {
       }
 
       // ==========================================================
+      // FUNÇÃO PARA SABER SE DEVEMOS PARAR O TÍTULO
+      // ==========================================================
+
+      bool ehFimDoTitulo(String linha) {
+        final String t =
+            linha.toLowerCase().trim();
+
+        if (t.isEmpty) {
+          return false;
+        }
+
+        // Informações de venda.
+        if (t.contains('afiliado') ||
+            t.contains('afiliados') ||
+            t.contains('vendido') ||
+            t.contains('vendidos') ||
+            t.contains('avaliação') ||
+            t.contains('avaliacao') ||
+            t.contains('estrelas')) {
+          return true;
+        }
+
+        // Área de outros criadores.
+        if (t.contains('aprenda com') ||
+            t.contains('outros criadores') ||
+            t.contains('compartilhe para') ||
+            t.contains('ganhar')) {
+          return true;
+        }
+
+        // Botões da Shopee.
+        if (t.contains('adicionar ao carrinho') ||
+            t.contains('comprar agora') ||
+            t.contains('frete') ||
+            t.contains('cupom')) {
+          return true;
+        }
+
+        // Outra porcentagem.
+        if (RegExp(
+          r'\d+[,.]?\d*\s*%',
+        ).hasMatch(t)) {
+          return true;
+        }
+
+        return false;
+      }
+
+      // ==========================================================
       // ENCONTRAR NOME DO PRODUTO
+      //
+      // IMPORTANTE:
+      // Depois do preço ignoramos comissão.
+      // Depois que encontramos o título,
+      // paramos imediatamente quando aparecer
+      // informação de venda ou outra área da Shopee.
       // ==========================================================
 
       if (indicePreco >= 0) {
         final List<String> partesNome = [];
 
+        bool encontrouTitulo = false;
+
         for (
           int i = indicePreco + 1;
-          i < linhas.length &&
-              i < indicePreco + 8;
+          i < linhas.length && i < indicePreco + 10;
           i++
         ) {
-          String linha = linhas[i].trim();
+          final String linha =
+              linhas[i].trim();
 
           if (linha.isEmpty) {
             continue;
           }
 
-          // LIMPA A LINHA ANTES DE ANALISAR.
-          linha = _limparNomeProduto(linha);
+          // ------------------------------------------------------
+          // Se chegou em informações abaixo do produto,
+          // PARA completamente.
+          // ------------------------------------------------------
 
-          if (linha.isEmpty) {
-            continue;
+          if (ehFimDoTitulo(linha)) {
+            break;
           }
+
+          // ------------------------------------------------------
+          // Ignora comissão, porcentagem e lixo.
+          // ------------------------------------------------------
 
           if (linhaEhLixo(linha)) {
             continue;
           }
 
-          final String minuscula =
-              _normalizarParaComparacao(
-            linha,
-          );
-
-          if (minuscula.contains('afiliados') ||
-              minuscula.contains('vendido') ||
-              minuscula.contains('avaliacao') ||
-              minuscula.contains('estrelas')) {
-            break;
-          }
+          // ------------------------------------------------------
+          // Não permite preços dentro do nome.
+          // ------------------------------------------------------
 
           if (regexPreco.hasMatch(linha)) {
             continue;
           }
 
-          if (linha.length <= 180) {
-            partesNome.add(linha);
+          // ------------------------------------------------------
+          // Limite de tamanho.
+          // ------------------------------------------------------
+
+          if (linha.length > 180) {
+            continue;
           }
 
-          if (partesNome.length >= 2) {
+          // ------------------------------------------------------
+          // Adiciona somente linhas que parecem título.
+          // ------------------------------------------------------
+
+          partesNome.add(linha);
+
+          encontrouTitulo = true;
+
+          // ------------------------------------------------------
+          // Normalmente o título da Shopee ocupa no máximo
+          // 2 ou 3 linhas no OCR.
+          //
+          // Se já temos 3 linhas, não buscamos mais texto.
+          // ------------------------------------------------------
+
+          if (partesNome.length >= 3) {
             break;
+          }
+
+          // ------------------------------------------------------
+          // Se a próxima linha claramente for lixo,
+          // o próximo ciclo irá parar.
+          // ------------------------------------------------------
+
+          if (encontrouTitulo &&
+              partesNome.length >= 2) {
+            // Não paramos aqui porque alguns produtos
+            // realmente possuem título em 3 linhas.
+            continue;
           }
         }
 
@@ -383,26 +556,27 @@ class _HomePageState extends State<HomePage> {
 
       // ==========================================================
       // SEGUNDA TENTATIVA
+      //
+      // Caso o OCR não encontre o preço corretamente.
       // ==========================================================
 
       if (nome.isEmpty) {
         final List<String> candidatos = [];
 
-        for (final String linhaOriginal in linhas) {
-          String linha =
-              _limparNomeProduto(
-            linhaOriginal,
-          );
-
-          if (linha.isEmpty) {
-            continue;
-          }
-
+        for (final String linha in linhas) {
           if (linhaEhLixo(linha)) {
             continue;
           }
 
+          if (ehFimDoTitulo(linha)) {
+            continue;
+          }
+
           if (regexPreco.hasMatch(linha)) {
+            continue;
+          }
+
+          if (linha.length > 180) {
             continue;
           }
 
@@ -412,9 +586,7 @@ class _HomePageState extends State<HomePage> {
         if (candidatos.isNotEmpty) {
           candidatos.sort(
             (a, b) =>
-                b.length.compareTo(
-              a.length,
-            ),
+                b.length.compareTo(a.length),
           );
 
           nome = candidatos.first;
@@ -422,21 +594,18 @@ class _HomePageState extends State<HomePage> {
       }
 
       // ==========================================================
-      // LIMPEZA FINAL
+      // LIMPAR NOME FINAL
       // ==========================================================
 
-      nome = _limparNomeProduto(nome);
+      nome =
+          _limparNomeProduto(nome);
 
       if (!mounted) return;
 
       setState(() {
         _textoLido = texto;
-
-        _nomeProduto =
-            nome;
-
-        _preco =
-            _normalizarPreco(preco);
+        _nomeProduto = nome;
+        _preco = _normalizarPreco(preco);
       });
     } catch (e) {
       if (!mounted) return;
@@ -450,163 +619,103 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // NORMALIZAR TEXTO PARA COMPARAÇÃO
-  //
-  // Transforma:
-  //
-  // COMISSÃO
-  // Comissão
-  // comissao
-  // COMISSÃOEXTRA
-  //
-  // em uma forma fácil de identificar.
+  // LIMPEZA FINAL DO NOME
   // ============================================================
 
-  String _normalizarParaComparacao(
-    String texto,
-  ) {
+  String _limparNomeProduto(String nome) {
     String resultado =
-        texto.toLowerCase();
+        nome.trim();
+
+    // ------------------------------------------------------------
+    // Remove comissão mesmo grudada no texto.
+    // Exemplos:
+    //
+    // cOMISSÃOEXTRA Ventilador
+    // COMISSÃO EXTRA Ventilador
+    // comissaoextra Ventilador
+    // ------------------------------------------------------------
+
+    final List<RegExp> remover = [
+      RegExp(
+        r'comiss[aã]o\s*extra',
+        caseSensitive: false,
+      ),
+
+      RegExp(
+        r'comiss[aã]oextra',
+        caseSensitive: false,
+      ),
+
+      RegExp(
+        r'\bcomiss[aã]o\b',
+        caseSensitive: false,
+      ),
+
+      RegExp(
+        r'\bcomissao\b',
+        caseSensitive: false,
+      ),
+
+      RegExp(
+        r'\bextra\b',
+        caseSensitive: false,
+      ),
+
+      RegExp(
+        r'\b\d+[,.]?\d*\s*%',
+        caseSensitive: false,
+      ),
+    ];
+
+    for (final RegExp regex
+        in remover) {
+      resultado =
+          resultado.replaceAll(
+        regex,
+        ' ',
+      );
+    }
+
+    // ------------------------------------------------------------
+    // Remove algumas palavras de interface caso o OCR tenha
+    // conseguido colocá-las junto ao título.
+    // ------------------------------------------------------------
+
+    final List<String> frasesRemover = [
+      'aprenda com outros criadores',
+      'aprenda com outros',
+      'outros criadores',
+      'compartilhe para ganhar',
+      'adicionar ao carrinho',
+      'comprar agora',
+    ];
+
+    for (final String frase
+        in frasesRemover) {
+      resultado =
+          resultado.replaceAll(
+        RegExp(
+          RegExp.escape(frase),
+          caseSensitive: false,
+        ),
+        ' ',
+      );
+    }
+
+    // ------------------------------------------------------------
+    // Limpa caracteres estranhos no começo.
+    // ------------------------------------------------------------
 
     resultado =
-        resultado.replaceAll(
-      'á',
-      'a',
+        resultado.replaceFirst(
+      RegExp(r'^[\s\-:|•]+'),
+      '',
     );
 
-    resultado =
-        resultado.replaceAll(
-      'à',
-      'a',
-    );
+    // ------------------------------------------------------------
+    // Remove espaços duplicados.
+    // ------------------------------------------------------------
 
-    resultado =
-        resultado.replaceAll(
-      'ã',
-      'a',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'â',
-      'a',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'ä',
-      'a',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'é',
-      'e',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'è',
-      'e',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'ê',
-      'e',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'ë',
-      'e',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'í',
-      'i',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'ì',
-      'i',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'î',
-      'i',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'ï',
-      'i',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'ó',
-      'o',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'ò',
-      'o',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'õ',
-      'o',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'ô',
-      'o',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'ö',
-      'o',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'ú',
-      'u',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'ù',
-      'u',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'û',
-      'u',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'ü',
-      'u',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      'ç',
-      'c',
-    );
-
-    // Junta espaços para facilitar a identificação.
     resultado =
         resultado.replaceAll(
       RegExp(r'\s+'),
@@ -617,174 +726,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // LIMPAR NOME DO PRODUTO
-  //
-  // ESTA É A PARTE PRINCIPAL DA CORREÇÃO.
-  // ============================================================
-
-  String _limparNomeProduto(
-    String nome,
-  ) {
-    if (nome.trim().isEmpty) {
-      return '';
-    }
-
-    String resultado =
-        nome.trim();
-
-    // ------------------------------------------------------------
-    // PRIMEIRO:
-    // remove diretamente as expressões mais comuns.
-    // ------------------------------------------------------------
-
-    resultado =
-        resultado.replaceAll(
-      RegExp(
-        r'comiss[aã]o\s*extra',
-        caseSensitive: false,
-      ),
-      '',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      RegExp(
-        r'comiss[aã]oextra',
-        caseSensitive: false,
-      ),
-      '',
-    );
-
-    // ------------------------------------------------------------
-    // SEGUNDO:
-    // faz uma versão SEM ACENTOS para pegar casos
-    // como "cOMISSÃOEXTRA".
-    // ------------------------------------------------------------
-
-    String comparacao =
-        _normalizarParaComparacao(
-      resultado,
-    );
-
-    // Remove "comissaoextra" em qualquer lugar.
-    comparacao =
-        comparacao.replaceAll(
-      'comissaoextra',
-      '',
-    );
-
-    // Remove "comissao extra".
-    comparacao =
-        comparacao.replaceAll(
-      'comissao extra',
-      '',
-    );
-
-    // Remove comissão isolada.
-    comparacao =
-        comparacao.replaceAll(
-      'comissao',
-      '',
-    );
-
-    // ------------------------------------------------------------
-    // Como "comparacao" não deve substituir o texto original,
-    // fazemos uma limpeza adicional no texto original usando
-    // regex que aceita qualquer combinação de maiúsculas/minúsculas.
-    // ------------------------------------------------------------
-
-    resultado =
-        resultado.replaceAll(
-      RegExp(
-        r'comiss[aã]o\s*extra',
-        caseSensitive: false,
-      ),
-      '',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      RegExp(
-        r'comiss[aã]o',
-        caseSensitive: false,
-      ),
-      '',
-    );
-
-    // ------------------------------------------------------------
-    // Remove variações sem acento diretamente.
-    // ------------------------------------------------------------
-
-    resultado =
-        resultado.replaceAll(
-      RegExp(
-        r'comissao\s*extra',
-        caseSensitive: false,
-      ),
-      '',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      RegExp(
-        r'comissaoextra',
-        caseSensitive: false,
-      ),
-      '',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      RegExp(
-        r'comissao',
-        caseSensitive: false,
-      ),
-      '',
-    );
-
-    // ------------------------------------------------------------
-    // Remove percentuais.
-    // ------------------------------------------------------------
-
-    resultado =
-        resultado.replaceAll(
-      RegExp(
-        r'\d+[,.]?\d*\s*%',
-        caseSensitive: false,
-      ),
-      '',
-    );
-
-    // ------------------------------------------------------------
-    // Remove caracteres/separadores que podem sobrar.
-    // ------------------------------------------------------------
-
-    resultado =
-        resultado.replaceAll(
-      RegExp(
-        r'^\s*[-|:]+\s*',
-      ),
-      '',
-    );
-
-    resultado =
-        resultado.replaceAll(
-      RegExp(
-        r'\s+',
-      ),
-      ' ',
-    );
-
-    return resultado.trim();
-  }
-
-  // ============================================================
   // NORMALIZAR PREÇO
   // ============================================================
 
-  String _normalizarPreco(
-    String preco,
-  ) {
+  String _normalizarPreco(String preco) {
     String resultado =
         preco.trim();
 
@@ -828,16 +773,10 @@ class _HomePageState extends State<HomePage> {
   // ============================================================
 
   String _gerarTextoDivulgacao() {
-    // LIMPEZA EXTRA DE SEGURANÇA.
-    final String nomeLimpo =
-        _limparNomeProduto(
-      _nomeProduto,
-    );
-
     final String nome =
-        nomeLimpo.isEmpty
+        _nomeProduto.isEmpty
             ? 'Produto Shopee'
-            : nomeLimpo;
+            : _nomeProduto;
 
     final String preco =
         _preco.isEmpty
@@ -863,6 +802,9 @@ $link
 
   // ============================================================
   // CRIAR IMAGEM FINAL
+  //
+  // SOMENTE RECORTE.
+  // NÃO REMOVE FUNDO.
   // ============================================================
 
   Future<File?> _criarImagemFinal() async {
@@ -872,8 +814,7 @@ $link
 
     try {
       final Uint8List bytes =
-          await _imagemRecortada!
-              .readAsBytes();
+          await _imagemRecortada!.readAsBytes();
 
       final img.Image? foto =
           img.decodeImage(bytes);
@@ -892,8 +833,7 @@ $link
           (largura * 0.20).round();
 
       final int alturaTotal =
-          alturaFoto +
-              alturaFaixa;
+          alturaFoto + alturaFaixa;
 
       final img.Image resultado =
           img.Image(
@@ -935,9 +875,7 @@ $link
       );
 
       final List<int> png =
-          img.encodePng(
-        resultado,
-      );
+          img.encodePng(resultado);
 
       final String caminho =
           '${Directory.systemTemp.path}/divulgacao_final_${DateTime.now().millisecondsSinceEpoch}.png';
@@ -999,16 +937,11 @@ $link
       final String texto =
           _gerarTextoDivulgacao();
 
-      final String nomeLimpo =
-          _limparNomeProduto(
-        _nomeProduto,
-      );
-
       await SharePlus.instance.share(
         ShareParams(
           text: texto,
           subject:
-              'Oferta Shopee - $nomeLimpo',
+              'Oferta Shopee - $_nomeProduto',
           files: [
             XFile(
               imagemFinal.path,
@@ -1081,9 +1014,8 @@ $link
     ScaffoldMessenger.of(context)
         .showSnackBar(
       SnackBar(
-        content: Text(
-          mensagem,
-        ),
+        content:
+            Text(mensagem),
         behavior:
             SnackBarBehavior.floating,
       ),
@@ -1108,9 +1040,7 @@ $link
           Container(
             width: double.infinity,
             padding:
-                const EdgeInsets.all(
-              14,
-            ),
+                const EdgeInsets.all(14),
             color:
                 const Color(0xFFFFF0EB),
             child: const Row(
@@ -1136,11 +1066,15 @@ $link
             ),
           ),
           Container(
-            color: Colors.white,
-            width: double.infinity,
-            child: Image.file(
+            color:
+                Colors.white,
+            width:
+                double.infinity,
+            child:
+                Image.file(
               _imagemRecortada!,
-              fit: BoxFit.contain,
+              fit:
+                  BoxFit.contain,
             ),
           ),
         ],
@@ -1161,7 +1095,8 @@ $link
           const Color(0xFFFFF8F5),
 
       appBar: AppBar(
-        title: const Text(
+        title:
+            const Text(
           'Divulgador Shopee',
           style:
               TextStyle(
@@ -1183,7 +1118,8 @@ $link
               const EdgeInsets.all(
             18,
           ),
-          child: Column(
+          child:
+              Column(
             crossAxisAlignment:
                 CrossAxisAlignment
                     .stretch,
@@ -1226,7 +1162,7 @@ $link
               ),
 
               // ==================================================
-              // BOTÃO ESCOLHER PRINT
+              // BOTÃO ESCOLHER
               // ==================================================
 
               ElevatedButton.icon(
@@ -1280,7 +1216,8 @@ $link
                   child:
                       Padding(
                     padding:
-                        EdgeInsets.all(
+                        EdgeInsets
+                            .all(
                       20,
                     ),
                     child:
@@ -1295,7 +1232,8 @@ $link
                         Text(
                           'Preparando o produto...',
                           textAlign:
-                              TextAlign.center,
+                              TextAlign
+                                  .center,
                         ),
                       ],
                     ),
@@ -1303,7 +1241,7 @@ $link
                 ),
 
               // ==================================================
-              // FOTO
+              // IMAGEM
               // ==================================================
 
               if (!_carregando)
@@ -1371,13 +1309,10 @@ $link
                         ),
 
                         Text(
-                          _limparNomeProduto(
-                            _nomeProduto,
-                          ).isEmpty
+                          _nomeProduto
+                                  .isEmpty
                               ? 'Não identificado'
-                              : _limparNomeProduto(
-                                  _nomeProduto,
-                                ),
+                              : _nomeProduto,
                           style:
                               const TextStyle(
                             fontSize: 19,
