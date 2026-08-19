@@ -35,7 +35,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final ImagePicker _picker = ImagePicker();
-
   final TextEditingController _linkController = TextEditingController();
 
   File? _imagem;
@@ -53,7 +52,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // ESCOLHER PRINT DA GALERIA
+  // ESCOLHER PRINT
   // ============================================================
 
   Future<void> _escolherPrint() async {
@@ -90,7 +89,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // OCR - LER TEXTO DO PRINT
+  // OCR
   // ============================================================
 
   Future<void> _lerTextoDaImagem(String caminho) async {
@@ -115,9 +114,9 @@ class _HomePageState extends State<HomePage> {
       String nome = '';
       String preco = '';
 
-      // ----------------------------------------------------------
-      // TENTA ENCONTRAR UM PREÇO
-      // ----------------------------------------------------------
+      // ==========================================================
+      // ENCONTRAR PREÇO
+      // ==========================================================
 
       final RegExp regexPreco = RegExp(
         r'(?:R\$\s*)?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})',
@@ -136,9 +135,9 @@ class _HomePageState extends State<HomePage> {
         }
       }
 
-      // ----------------------------------------------------------
-      // TENTA ENCONTRAR O NOME DO PRODUTO
-      // ----------------------------------------------------------
+      // ==========================================================
+      // ENCONTRAR NOME DO PRODUTO
+      // ==========================================================
 
       final List<String> palavrasIgnoradas = [
         'shopee',
@@ -177,7 +176,6 @@ class _HomePageState extends State<HomePage> {
         }
       }
 
-      // Se não encontrou um nome, pega uma das primeiras linhas.
       if (nome.isEmpty && linhas.isNotEmpty) {
         nome = linhas.first;
       }
@@ -225,7 +223,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // GERAR TEXTO DA DIVULGAÇÃO
+  // TEXTO DA DIVULGAÇÃO
   // ============================================================
 
   String _gerarTextoDivulgacao() {
@@ -239,10 +237,10 @@ class _HomePageState extends State<HomePage> {
 
     final String link = _obterLink();
 
-    String texto = '''
-🔥 OFERTA NA SHOPEE 🔥
-
+    return '''
 🛍️ $nome
+
+🔥 OFERTA NA SHOPEE 🔥
 
 💰 $preco
 
@@ -250,13 +248,11 @@ class _HomePageState extends State<HomePage> {
 $link
 
 🛒 Aproveite a oferta!
-''';
-
-    return texto.trim();
+'''.trim();
   }
 
   // ============================================================
-  // COMPARTILHAR
+  // COMPARTILHAR FOTO + TEXTO
   // ============================================================
 
   Future<void> _compartilhar() async {
@@ -269,26 +265,36 @@ $link
       return;
     }
 
+    if (_imagem == null) {
+      _mostrarMensagem(
+        'Escolha o print do produto primeiro.',
+      );
+      return;
+    }
+
     final String texto = _gerarTextoDivulgacao();
 
     try {
       await SharePlus.instance.share(
         ShareParams(
           text: texto,
-          subject: 'Oferta Shopee',
+          subject: 'Oferta Shopee - $_nomeProduto',
+          files: [
+            XFile(_imagem!.path),
+          ],
         ),
       );
     } catch (e) {
       if (!mounted) return;
 
       _mostrarMensagem(
-        'Não foi possível abrir o compartilhamento.\n\n$e',
+        'Não foi possível compartilhar.\n\n$e',
       );
     }
   }
 
   // ============================================================
-  // COPIAR TEXTO
+  // COPIAR / COMPARTILHAR TEXTO
   // ============================================================
 
   Future<void> _copiarTexto() async {
@@ -345,6 +351,7 @@ $link
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFFF8F5),
+
       appBar: AppBar(
         title: const Text(
           'Divulgador Shopee',
@@ -356,26 +363,33 @@ $link
         backgroundColor: Colors.deepOrange,
         foregroundColor: Colors.white,
       ),
+
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(18),
+
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
+
             children: [
-              // --------------------------------------------------
+
+              // ==================================================
               // LINK
-              // --------------------------------------------------
+              // ==================================================
 
               TextField(
                 controller: _linkController,
                 keyboardType: TextInputType.url,
+
                 decoration: InputDecoration(
                   labelText: 'Link do produto / link de afiliado',
                   hintText: 'Cole seu link aqui',
                   prefixIcon: const Icon(Icons.link),
+
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(18),
                   ),
+
                   filled: true,
                   fillColor: Colors.white,
                 ),
@@ -383,25 +397,29 @@ $link
 
               const SizedBox(height: 14),
 
-              // --------------------------------------------------
+              // ==================================================
               // BOTÃO PRINT
-              // --------------------------------------------------
+              // ==================================================
 
               ElevatedButton.icon(
                 onPressed:
                     _carregando ? null : _escolherPrint,
+
                 icon: const Icon(Icons.photo_library),
+
                 label: const Text(
-                  'ESCOLHER PRINT DO PRODUTO',
+                  'ESCOLHER FOTO / PRINT DO PRODUTO',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(
                     vertical: 18,
                   ),
+
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(18),
                   ),
@@ -410,20 +428,24 @@ $link
 
               const SizedBox(height: 18),
 
-              // --------------------------------------------------
+              // ==================================================
               // CARREGANDO
-              // --------------------------------------------------
+              // ==================================================
 
               if (_carregando)
                 const Card(
                   child: Padding(
                     padding: EdgeInsets.all(20),
+
                     child: Column(
                       children: [
+
                         CircularProgressIndicator(),
+
                         SizedBox(height: 12),
+
                         Text(
-                          'Lendo as informações do print...',
+                          'Lendo o nome e o preço do produto...',
                           textAlign: TextAlign.center,
                         ),
                       ],
@@ -431,37 +453,71 @@ $link
                   ),
                 ),
 
-              // --------------------------------------------------
-              // IMAGEM
-              // --------------------------------------------------
+              // ==================================================
+              // FOTO DO PRODUTO
+              // ==================================================
 
               if (_imagem != null && !_carregando)
                 Card(
                   clipBehavior: Clip.antiAlias,
-                  child: Image.file(
-                    _imagem!,
-                    height: 300,
-                    fit: BoxFit.contain,
+
+                  child: Column(
+                    children: [
+
+                      const Padding(
+                        padding: EdgeInsets.all(12),
+
+                        child: Row(
+                          children: [
+
+                            Icon(
+                              Icons.image,
+                              color: Colors.deepOrange,
+                            ),
+
+                            SizedBox(width: 8),
+
+                            Text(
+                              'FOTO DO PRODUTO',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      Image.file(
+                        _imagem!,
+                        height: 300,
+                        width: double.infinity,
+                        fit: BoxFit.contain,
+                      ),
+                    ],
                   ),
                 ),
 
               const SizedBox(height: 15),
 
-              // --------------------------------------------------
+              // ==================================================
               // RESULTADO
-              // --------------------------------------------------
+              // ==================================================
 
               if (!_carregando &&
                   (_nomeProduto.isNotEmpty ||
                       _preco.isNotEmpty))
                 Card(
                   elevation: 2,
+
                   child: Padding(
                     padding: const EdgeInsets.all(18),
+
                     child: Column(
                       crossAxisAlignment:
                           CrossAxisAlignment.start,
+
                       children: [
+
                         const Text(
                           'INFORMAÇÕES ENCONTRADAS',
                           style: TextStyle(
@@ -474,7 +530,7 @@ $link
                         const SizedBox(height: 15),
 
                         const Text(
-                          'PRODUTO',
+                          'NOME DO PRODUTO',
                           style: TextStyle(
                             color: Colors.grey,
                             fontWeight: FontWeight.bold,
@@ -487,6 +543,7 @@ $link
                           _nomeProduto.isEmpty
                               ? 'Não identificado'
                               : _nomeProduto,
+
                           style: const TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
@@ -509,6 +566,7 @@ $link
                           _preco.isEmpty
                               ? 'Não identificado'
                               : _preco,
+
                           style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
@@ -520,18 +578,21 @@ $link
                   ),
                 ),
 
-              // --------------------------------------------------
+              // ==================================================
               // TEXTO DETECTADO
-              // --------------------------------------------------
+              // ==================================================
 
               if (_textoLido.isNotEmpty)
                 ExpansionTile(
                   title: const Text(
                     'Ver texto detectado no print',
                   ),
+
                   children: [
+
                     Padding(
                       padding: const EdgeInsets.all(16),
+
                       child: SelectableText(
                         _textoLido,
                       ),
@@ -541,28 +602,35 @@ $link
 
               const SizedBox(height: 12),
 
-              // --------------------------------------------------
-              // COMPARTILHAR
-              // --------------------------------------------------
+              // ==================================================
+              // COMPARTILHAR FOTO + TEXTO
+              // ==================================================
 
               if (_nomeProduto.isNotEmpty ||
                   _preco.isNotEmpty)
                 ElevatedButton.icon(
                   onPressed: _compartilhar,
-                  icon: const Icon(Icons.share),
+
+                  icon: const Icon(
+                    Icons.image,
+                  ),
+
                   label: const Text(
-                    'COMPARTILHAR DIVULGAÇÃO',
+                    'COMPARTILHAR FOTO + DIVULGAÇÃO',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.deepOrange,
                     foregroundColor: Colors.white,
+
                     padding: const EdgeInsets.symmetric(
                       vertical: 18,
                     ),
+
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(18),
                     ),
@@ -571,19 +639,57 @@ $link
 
               const SizedBox(height: 10),
 
-              // --------------------------------------------------
-              // LIMPAR
-              // --------------------------------------------------
+              // ==================================================
+              // COMPARTILHAR SOMENTE TEXTO
+              // ==================================================
 
-              if (_imagem != null)
+              if (_nomeProduto.isNotEmpty ||
+                  _preco.isNotEmpty)
                 OutlinedButton.icon(
-                  onPressed: _limpar,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('LIMPAR'),
+                  onPressed: _copiarTexto,
+
+                  icon: const Icon(
+                    Icons.text_fields,
+                  ),
+
+                  label: const Text(
+                    'COMPARTILHAR SOMENTE TEXTO',
+                  ),
+
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                       vertical: 15,
                     ),
+
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                ),
+
+              const SizedBox(height: 10),
+
+              // ==================================================
+              // LIMPAR
+              // ==================================================
+
+              if (_imagem != null)
+                OutlinedButton.icon(
+                  onPressed: _limpar,
+
+                  icon: const Icon(
+                    Icons.refresh,
+                  ),
+
+                  label: const Text(
+                    'LIMPAR',
+                  ),
+
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 15,
+                    ),
+
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(18),
                     ),
@@ -593,9 +699,10 @@ $link
               const SizedBox(height: 20),
 
               const Text(
-                'O aplicativo lê as informações visíveis no print. '
-                'O link de afiliado é informado manualmente por você.',
+                'O aplicativo lê o nome e o preço visíveis no print '
+                'e permite compartilhar a foto junto com a divulgação.',
                 textAlign: TextAlign.center,
+
                 style: TextStyle(
                   color: Colors.grey,
                   fontSize: 13,
