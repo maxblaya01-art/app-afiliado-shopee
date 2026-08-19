@@ -38,35 +38,6 @@ jobs:
             flutter create --platforms=android .
           fi
 
-      - name: Desativar R8 e Minify
-        shell: bash
-        run: |
-          echo "Procurando configurações Android..."
-
-          if [ -f "android/app/build.gradle" ]; then
-            echo "Encontrado android/app/build.gradle"
-
-            sed -i \
-              -e 's/minifyEnabled[[:space:]]*true/minifyEnabled false/g' \
-              -e 's/shrinkResources[[:space:]]*true/shrinkResources false/g' \
-              android/app/build.gradle
-
-            echo "Configuração aplicada:"
-            grep -n -E "minifyEnabled|shrinkResources" android/app/build.gradle || true
-          fi
-
-          if [ -f "android/app/build.gradle.kts" ]; then
-            echo "Encontrado android/app/build.gradle.kts"
-
-            sed -i \
-              -e 's/isMinifyEnabled[[:space:]]*=[[:space:]]*true/isMinifyEnabled = false/g' \
-              -e 's/isShrinkResources[[:space:]]*=[[:space:]]*true/isShrinkResources = false/g' \
-              android/app/build.gradle.kts
-
-            echo "Configuração aplicada:"
-            grep -n -E "isMinifyEnabled|isShrinkResources" android/app/build.gradle.kts || true
-          fi
-
       - name: Instalar dependências
         run: |
           flutter clean
@@ -76,22 +47,22 @@ jobs:
         run: |
           flutter pub deps
 
-      - name: Compilar APK
+      - name: Gerar APK
         run: |
-          flutter build apk --release --no-shrink --no-tree-shake-icons
+          flutter build apk --debug --no-tree-shake-icons
 
       - name: Verificar APK
         run: |
-          echo "Procurando APK..."
+          echo "APK encontrado:"
           find build/app/outputs/flutter-apk -type f -name "*.apk" -ls
 
-          test -f build/app/outputs/flutter-apk/app-release.apk
+          test -f build/app/outputs/flutter-apk/app-debug.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: app-debug
+          path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
       - name: Finalizado
