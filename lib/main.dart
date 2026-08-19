@@ -1,9 +1,11 @@
-import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:share_plus/share_plus.dart';
 
 void main() {
   runApp(const DivulgadorShopeeApp());
@@ -36,266 +38,306 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  final ImagePicker picker = ImagePicker();
+
+  final TextEditingController nomeController =
+      TextEditingController();
+
+  final TextEditingController precoController =
+      TextEditingController();
+
   final TextEditingController linkController =
       TextEditingController();
 
-  late final WebViewController webViewController;
+  File? imagemSelecionada;
 
-  bool carregando = false;
+  bool lendoImagem = false;
 
-  String erro = '';
-  String produto = '';
-  String preco = '';
-  String imagem = '';
-  String linkFinal = '';
+  String textoDetectado = '';
 
   @override
-  void initState() {
-    super.initState();
+  void dispose() {
+    nomeController.dispose();
+    precoController.dispose();
+    linkController.dispose();
+    super.dispose();
+  }
 
-    webViewController = WebViewController()
-      ..setJavaScriptMode(
-        JavaScriptMode.unrestricted,
-      )
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (url) {
-            if (mounted) {
-              setState(() {
-                carregando = true;
-              });
-            }
-          },
-          onPageFinished: (url) {
-            _lerProduto(url);
-          },
-          onWebResourceError: (error) {
-            if (mounted) {
-              setState(() {
-                carregando = false;
-                erro =
-                    'A Shopee bloqueou a leitura automática. '
-                    'Você pode abrir o produto na Shopee.';
-              });
-            }
-          },
+  Future<void> selecionarPrint() async {
+    try {
+      final XFile? imagem = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 100,
+      );
+
+      if (imagem == null) {
+        return;
+      }
+
+      setState(() {
+        imagemSelecionada = File(imagem.path);
+        lendoImagem = true;
+        textoDetectado = '';
+      });
+
+      await reconhecerTexto(imagem.path);
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        lendoImagem = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Não foi possível selecionar a imagem: $e',
+          ),
         ),
       );
-  }
-
-  bool _ehLinkShopee(String valor) {
-    final uri = Uri.tryParse(valor);
-
-    if (uri == null) {
-      return false;
-    }
-
-    return uri.host.toLowerCase().contains('shopee.com.br');
-  }
-
-  Future<void> _buscarProduto() async {
-    String valor = linkController.text.trim();
-
-    if (valor.isEmpty) {
-      setState(() {
-        erro = 'Cole o link do produto da Shopee.';
-      });
-      return;
-    }
-
-    if (!valor.startsWith('http://') &&
-        !valor.startsWith('https://')) {
-      valor = 'https://$valor';
-    }
-
-    if (!_ehLinkShopee(valor)) {
-      setState(() {
-        erro = 'Cole um link válido da Shopee.';
-      });
-      return;
-    }
-
-    FocusScope.of(context).unfocus();
-
-    setState(() {
-      carregando = true;
-      erro = '';
-      produto = '';
-      preco = '';
-      imagem = '';
-      linkFinal = valor;
-    });
-
-    try {
-      await webViewController.loadRequest(
-        Uri.parse(valor),
-      );
-    } catch (e) {
-      setState(() {
-        carregando = false;
-        erro = 'Não foi possível abrir o link.';
-      });
     }
   }
 
-  Future<void> _lerProduto(String url) async {
-    try {
-      await Future.delayed(
-        const Duration(seconds: 2),
-      );
-
-      final resultado =
-          await webViewController.runJavaScriptReturningResult(
-        r'''
-(() => {
-  const obter = (seletor, atributo = 'content') => {
-    const elemento = document.querySelector(seletor);
-
-    if (!elemento) {
-      return '';
-    }
-
-    return elemento.getAttribute(atributo) ||
-           elemento.textContent ||
-           '';
-  };
-
-  return JSON.stringify({
-    titulo: obter('meta[property="og:title"]'),
-    imagem: obter('meta[property="og:image"]'),
-    preco: obter('meta[property="product:price:amount"]'),
-    canonico: obter('link[rel="canonical"]', 'href'),
-    url: window.location.href
-  });
-})();
-''',
-      );
-
-      String texto = resultado.toString();
-
-      if (texto.startsWith('"')) {
-        texto = jsonDecode(texto);
-      }
-
-      final dados =
-          jsonDecode(texto) as Map<String, dynamic>;
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        produto =
-            (dados['titulo'] ?? '').toString().trim();
-
-        if (produto.isEmpty) {
-          produto = 'Produto Shopee';
-        }
-
-        final valorPreco =
-            (dados['preco'] ?? '').toString().trim();
-
-        if (valorPreco.isEmpty) {
-          preco = 'Preço não disponível';
-        } else {
-          preco = 'R\$ $valorPreco';
-        }
-
-        imagem =
-            (dados['imagem'] ?? '').toString().trim();
-
-        final linkCanonico =
-            (dados['canonico'] ?? '').toString().trim();
-
-        if (linkCanonico.isNotEmpty) {
-          linkFinal = linkCanonico;
-        } else {
-          linkFinal = url;
-        }
-
-        carregando = false;
-        erro = '';
-      });
-    } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        carregando = false;
-        erro =
-            'A Shopee bloqueou a leitura automática. '
-            'Use o botão ABRIR NA SHOPEE.';
-        
-        if (produto.isEmpty) {
-          produto = 'Produto Shopee';
-        }
-
-        if (preco.isEmpty) {
-          preco = 'Preço não disponível';
-        }
-      });
-    }
-  }
-
-  Future<void> _abrirShopee() async {
-    final valor =
-        linkFinal.isNotEmpty
-            ? linkFinal
-            : linkController.text.trim();
-
-    final uri = Uri.tryParse(valor);
-
-    if (uri != null) {
-      await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
-    }
-  }
-
-  Future<void> _gerarDivulgacao() async {
-    final nome =
-        produto.isEmpty ? 'Oferta Shopee' : produto;
-
-    final valorPreco =
-        preco.isEmpty ? 'Confira o preço' : preco;
-
-    final valorLink =
-        linkFinal.isEmpty
-            ? linkController.text.trim()
-            : linkFinal;
-
-    final texto = '''
-🔥 $nome
-
-💰 $valorPreco
-
-🛒 COMPRE AQUI:
-$valorLink
-''';
-
-    await Clipboard.setData(
-      ClipboardData(text: texto),
+  Future<void> reconhecerTexto(String caminho) async {
+    final TextRecognizer reconhecedor =
+        TextRecognizer(
+      script: TextRecognitionScript.latin,
     );
 
-    if (!mounted) {
+    try {
+      final InputImage imagem =
+          InputImage.fromFilePath(caminho);
+
+      final RecognizedText resultado =
+          await reconhecedor.processImage(imagem);
+
+      final String texto = resultado.text;
+
+      setState(() {
+        textoDetectado = texto;
+      });
+
+      preencherAutomaticamente(texto);
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Não consegui ler o texto do print: $e',
+          ),
+        ),
+      );
+    } finally {
+      await reconhecedor.close();
+
+      if (mounted) {
+        setState(() {
+          lendoImagem = false;
+        });
+      }
+    }
+  }
+
+  void preencherAutomaticamente(String texto) {
+    final linhas = texto
+        .split('\n')
+        .map((linha) => linha.trim())
+        .where((linha) => linha.isNotEmpty)
+        .toList();
+
+    String precoEncontrado = '';
+    String nomeEncontrado = '';
+
+    // Procura valores como:
+    // R$ 39,90
+    // R$39,90
+    // 39,90
+    // 39.90
+    final RegExp regexPreco = RegExp(
+      r'(?:R\$\s*)?\d{1,6}(?:[.,]\d{2})',
+      caseSensitive: false,
+    );
+
+    for (final linha in linhas) {
+      final match = regexPreco.firstMatch(linha);
+
+      if (match != null) {
+        String valor = match.group(0) ?? '';
+
+        valor = valor
+            .replaceAll('R\$', '')
+            .trim();
+
+        precoEncontrado = valor;
+
+        break;
+      }
+    }
+
+    // Tenta encontrar um nome de produto.
+    //
+    // Ignora linhas que claramente parecem:
+    // preço, frete, parcelas, avaliações,
+    // links e textos muito curtos.
+    final List<String> candidatos = [];
+
+    for (final linha in linhas) {
+      final String minusculo =
+          linha.toLowerCase();
+
+      if (linha.length < 8) {
+        continue;
+      }
+
+      if (linha.length > 160) {
+        continue;
+      }
+
+      if (minusculo.contains('r\$')) {
+        continue;
+      }
+
+      if (minusculo.contains('frete')) {
+        continue;
+      }
+
+      if (minusculo.contains('parcela')) {
+        continue;
+      }
+
+      if (minusculo.contains('avalia')) {
+        continue;
+      }
+
+      if (minusculo.contains('vendido')) {
+        continue;
+      }
+
+      if (minusculo.contains('comprado')) {
+        continue;
+      }
+
+      if (minusculo.contains('http')) {
+        continue;
+      }
+
+      candidatos.add(linha);
+    }
+
+    if (candidatos.isNotEmpty) {
+      candidatos.sort(
+        (a, b) => b.length.compareTo(a.length),
+      );
+
+      nomeEncontrado = candidatos.first;
+    }
+
+    if (nomeEncontrado.isEmpty) {
+      nomeEncontrado = 'Produto Shopee';
+    }
+
+    if (mounted) {
+      setState(() {
+        nomeController.text = nomeEncontrado;
+
+        if (precoEncontrado.isNotEmpty) {
+          precoController.text = precoEncontrado;
+        }
+      });
+    }
+  }
+
+  String montarDivulgacao() {
+    final String nome =
+        nomeController.text.trim().isEmpty
+            ? 'Oferta Shopee'
+            : nomeController.text.trim();
+
+    final String preco =
+        precoController.text.trim().isEmpty
+            ? 'Confira o preço'
+            : precoController.text.trim();
+
+    final String link =
+        linkController.text.trim();
+
+    return '''
+🔥 OFERTA SHOPEE 🔥
+
+🛍️ $nome
+
+💰 R\$ $preco
+
+🛒 COMPRE AQUI:
+$link
+
+⚡ Aproveite a oferta!
+''';
+  }
+
+  Future<void> copiarDivulgacao() async {
+    final String link =
+        linkController.text.trim();
+
+    if (link.isEmpty) {
+      mostrarMensagem(
+        'Cole primeiro o seu link de afiliado.',
+      );
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Divulgação copiada!',
-        ),
+    await Clipboard.setData(
+      ClipboardData(
+        text: montarDivulgacao(),
+      ),
+    );
+
+    mostrarMensagem(
+      'Divulgação copiada!',
+    );
+  }
+
+  Future<void> compartilharDivulgacao() async {
+    final String link =
+        linkController.text.trim();
+
+    if (link.isEmpty) {
+      mostrarMensagem(
+        'Cole primeiro o seu link de afiliado.',
+      );
+      return;
+    }
+
+    final String texto =
+        montarDivulgacao();
+
+    await SharePlus.instance.share(
+      ShareParams(
+        text: texto,
+        title: 'Oferta Shopee',
       ),
     );
   }
 
-  @override
-  void dispose() {
-    linkController.dispose();
-    super.dispose();
+  void limparTudo() {
+    setState(() {
+      imagemSelecionada = null;
+      textoDetectado = '';
+      nomeController.clear();
+      precoController.clear();
+      linkController.clear();
+    });
+  }
+
+  void mostrarMensagem(String mensagem) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensagem),
+      ),
+    );
   }
 
   @override
@@ -308,55 +350,191 @@ $valorLink
           'Divulgador Shopee',
           style: TextStyle(
             color: Colors.white,
-            fontSize: 27,
+            fontSize: 25,
+            fontWeight: FontWeight.bold,
           ),
         ),
+        actions: [
+          IconButton(
+            onPressed: limparTudo,
+            icon: const Icon(
+              Icons.delete_outline,
+              color: Colors.white,
+            ),
+            tooltip: 'Limpar',
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: linkController,
-              keyboardType: TextInputType.url,
-              decoration: InputDecoration(
-                labelText:
-                    'Link do produto Shopee',
-                hintText:
-                    'https://s.shopee.com.br/...',
-                prefixIcon:
-                    const Icon(Icons.link),
-                border: OutlineInputBorder(
-                  borderRadius:
-                      BorderRadius.circular(18),
+
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment:
+                CrossAxisAlignment.stretch,
+            children: [
+
+              const Text(
+                '1. Escolha o print do produto',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ),
 
-            const SizedBox(height: 15),
+              const SizedBox(height: 10),
 
-            ElevatedButton.icon(
-              onPressed:
-                  carregando
-                      ? null
-                      : _buscarProduto,
-              icon: const Icon(Icons.search),
-              label: Text(
-                carregando
-                    ? 'CARREGANDO...'
-                    : 'BUSCAR PRODUTO',
+              OutlinedButton.icon(
+                onPressed:
+                    lendoImagem
+                        ? null
+                        : selecionarPrint,
+                icon: const Icon(
+                  Icons.photo_library,
+                  size: 28,
+                ),
+                label: Text(
+                  lendoImagem
+                      ? 'LENDO O PRINT...'
+                      : 'SELECIONAR PRINT',
+                ),
+                style:
+                    OutlinedButton.styleFrom(
+                  minimumSize:
+                      const Size.fromHeight(58),
+                ),
               ),
-              style:
-                  ElevatedButton.styleFrom(
-                minimumSize:
-                    const Size.fromHeight(58),
-              ),
-            ),
 
-            if (erro.isNotEmpty) ...[
               const SizedBox(height: 18),
+
+              if (imagemSelecionada != null)
+                ClipRRect(
+                  borderRadius:
+                      BorderRadius.circular(15),
+                  child: Image.file(
+                    imagemSelecionada!,
+                    height: 300,
+                    fit: BoxFit.contain,
+                  ),
+                )
+              else
+                Container(
+                  height: 220,
+                  decoration: BoxDecoration(
+                    color:
+                        Colors.grey.shade200,
+                    borderRadius:
+                        BorderRadius.circular(15),
+                  ),
+                  child: const Column(
+                    mainAxisAlignment:
+                        MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.image_outlined,
+                        size: 70,
+                        color: Colors.grey,
+                      ),
+                      SizedBox(height: 10),
+                      Text(
+                        'O print aparecerá aqui',
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              const SizedBox(height: 25),
+
+              const Text(
+                '2. Confira as informações',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              TextField(
+                controller: nomeController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  labelText: 'Nome do produto',
+                  hintText:
+                      'O nome será reconhecido pelo print',
+                  prefixIcon:
+                      const Icon(Icons.shopping_bag),
+                  border: OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(15),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              TextField(
+                controller: precoController,
+                keyboardType:
+                    TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Preço',
+                  hintText: 'Ex.: 39,90',
+                  prefixIcon:
+                      const Icon(Icons.attach_money),
+                  border: OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(15),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 25),
+
+              const Text(
+                '3. Cole seu link de afiliado',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              TextField(
+                controller: linkController,
+                keyboardType:
+                    TextInputType.url,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  labelText:
+                      'Seu link de afiliado Shopee',
+                  hintText:
+                      'Cole aqui o seu link de afiliado',
+                  prefixIcon:
+                      const Icon(Icons.link),
+                  border: OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(15),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 25),
+
+              const Text(
+                '4. Divulgação',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+
+              const SizedBox(height: 12),
 
               Container(
                 padding:
@@ -365,164 +543,80 @@ $valorLink
                   color:
                       Colors.orange.shade50,
                   borderRadius:
-                      BorderRadius.circular(18),
+                      BorderRadius.circular(15),
                   border: Border.all(
                     color:
                         Colors.orange.shade200,
                   ),
                 ),
                 child: Text(
-                  erro,
-                  style: TextStyle(
-                    color:
-                        Colors.deepOrange.shade700,
-                    fontSize: 17,
+                  montarDivulgacao(),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    height: 1.5,
                   ),
                 ),
               ),
-            ],
 
-            const SizedBox(height: 22),
+              const SizedBox(height: 15),
 
-            Card(
-              elevation: 3,
-              child: Padding(
-                padding:
-                    const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.stretch,
+              ElevatedButton.icon(
+                onPressed:
+                    copiarDivulgacao,
+                icon: const Icon(
+                  Icons.copy,
+                ),
+                label: const Text(
+                  'COPIAR DIVULGAÇÃO',
+                ),
+                style:
+                    ElevatedButton.styleFrom(
+                  backgroundColor:
+                      Colors.deepOrange,
+                  foregroundColor:
+                      Colors.white,
+                  minimumSize:
+                      const Size.fromHeight(56),
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              ElevatedButton.icon(
+                onPressed:
+                    compartilharDivulgacao,
+                icon: const Icon(
+                  Icons.share,
+                ),
+                label: const Text(
+                  'COMPARTILHAR',
+                ),
+                style:
+                    ElevatedButton.styleFrom(
+                  minimumSize:
+                      const Size.fromHeight(56),
+                ),
+              ),
+
+              const SizedBox(height: 25),
+
+              if (textoDetectado.isNotEmpty)
+                ExpansionTile(
+                  title: const Text(
+                    'Texto reconhecido no print',
+                  ),
                   children: [
-                    SizedBox(
-                      height: 240,
-                      child: imagem.isEmpty
-                          ? Container(
-                              color:
-                                  Colors.grey.shade200,
-                              child:
-                                  const Icon(
-                                Icons
-                                    .image_outlined,
-                                size: 70,
-                                color:
-                                    Colors.grey,
-                              ),
-                            )
-                          : Image.network(
-                              imagem,
-                              fit:
-                                  BoxFit.contain,
-                              errorBuilder:
-                                  (
-                                    context,
-                                    error,
-                                    stackTrace,
-                                  ) {
-                                return const Icon(
-                                  Icons
-                                      .broken_image_outlined,
-                                  size: 70,
-                                );
-                              },
-                            ),
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    const Text(
-                      'PRODUTO',
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-
-                    const SizedBox(height: 5),
-
-                    Text(
-                      produto.isEmpty
-                          ? 'Produto Shopee'
-                          : produto,
-                      style:
-                          const TextStyle(
-                        fontSize: 23,
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    const Text(
-                      'PREÇO',
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-
-                    const SizedBox(height: 5),
-
-                    Text(
-                      preco.isEmpty
-                          ? 'Preço será carregado automaticamente'
-                          : preco,
-                      style:
-                          const TextStyle(
-                        color:
-                            Colors.deepOrange,
-                        fontSize: 22,
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    OutlinedButton.icon(
-                      onPressed:
-                          _abrirShopee,
-                      icon: const Icon(
-                        Icons.open_in_new,
-                      ),
-                      label: const Text(
-                        'ABRIR NA SHOPEE',
-                      ),
-                      style:
-                          OutlinedButton.styleFrom(
-                        minimumSize:
-                            const Size.fromHeight(
-                          52,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    ElevatedButton.icon(
-                      onPressed:
-                          _gerarDivulgacao,
-                      icon: const Icon(
-                        Icons.copy,
-                      ),
-                      label: const Text(
-                        'GERAR DIVULGAÇÃO',
-                      ),
-                      style:
-                          ElevatedButton.styleFrom(
-                        minimumSize:
-                            const Size.fromHeight(
-                          52,
-                        ),
+                    Padding(
+                      padding:
+                          const EdgeInsets.all(12),
+                      child: Text(
+                        textoDetectado,
                       ),
                     ),
                   ],
                 ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
