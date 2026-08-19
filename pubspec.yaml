@@ -27,3 +27,4 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  image_background_remover: ^2.0.1
