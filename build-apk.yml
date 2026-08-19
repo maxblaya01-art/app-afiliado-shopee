@@ -12,7 +12,7 @@ jobs:
 
     steps:
 
-      - name: Baixar código
+      - name: Set up job
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -39,46 +39,79 @@ jobs:
       - name: Corrigir configuração Android
         shell: bash
         run: |
-          echo "Corrigindo configurações de redução..."
+          set -e
 
-          if [ -f android/app/build.gradle ]; then
-            sed -i 's/shrinkResources[[:space:]]*=[[:space:]]*true/shrinkResources = false/g' android/app/build.gradle
-            sed -i 's/shrinkResources[[:space:]]\+true/shrinkResources false/g' android/app/build.gradle
-            sed -i 's/minifyEnabled[[:space:]]*=[[:space:]]*true/minifyEnabled = false/g' android/app/build.gradle
-            sed -i 's/minifyEnabled[[:space:]]\+true/minifyEnabled false/g' android/app/build.gradle
+          echo "========================================"
+          echo "CORRIGINDO CONFIGURAÇÃO ANDROID"
+          echo "========================================"
+
+          BUILD_FILE="android/app/build.gradle"
+
+          if [ ! -f "$BUILD_FILE" ]; then
+            echo "ERRO: android/app/build.gradle não encontrado."
+            exit 1
           fi
 
-          if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/isShrinkResources[[:space:]]*=[[:space:]]*true/isShrinkResources = false/g' android/app/build.gradle.kts
-            sed -i 's/isMinifyEnabled[[:space:]]*=[[:space:]]*true/isMinifyEnabled = false/g' android/app/build.gradle.kts
-          fi
+          echo "Arquivo encontrado: $BUILD_FILE"
 
-          echo "Configuração Android:"
-          if [ -f android/app/build.gradle ]; then
-            grep -n -E "shrinkResources|minifyEnabled" android/app/build.gradle || true
-          fi
+          echo ""
+          echo "Removendo completamente shrinkResources..."
 
-          if [ -f android/app/build.gradle.kts ]; then
-            grep -n -E "isShrinkResources|isMinifyEnabled" android/app/build.gradle.kts || true
-          fi
+          # Remove qualquer configuração de shrinkResources
+          sed -i '/shrinkResources/d' "$BUILD_FILE"
 
-      - name: Instalar dependências
-        run: flutter pub get
+          # Desativa qualquer configuração de minify
+          sed -i 's/minifyEnabled[[:space:]]*=[[:space:]]*true/minifyEnabled = false/g' "$BUILD_FILE"
+          sed -i 's/minifyEnabled[[:space:]]\+true/minifyEnabled false/g' "$BUILD_FILE"
+
+          # Remove configurações antigas de proguard que possam ativar R8
+          sed -i '/proguardFiles/d' "$BUILD_FILE"
+
+          echo ""
+          echo "Verificando configuração final:"
+          cat "$BUILD_FILE"
+
+          echo ""
+          echo "========================================"
+          echo "CONFIGURAÇÃO ANDROID CORRIGIDA"
+          echo "========================================"
 
       - name: Limpar projeto
-        run: flutter clean
+        run: |
+          flutter clean
+          rm -rf android/.gradle
+          rm -rf build
 
-      - name: Instalar dependências novamente
-        run: flutter pub get
+      - name: Instalar dependências
+        run: |
+          flutter pub get
+
+      - name: Verificar dependências
+        run: |
+          flutter pub deps
 
       - name: Compilar APK
-        run: flutter build apk --release --no-shrink --no-tree-shake-icons
+        run: |
+          flutter build apk \
+            --release \
+            --no-shrink \
+            --no-tree-shake-icons
 
       - name: Verificar APK
         run: |
-          echo "Procurando APK..."
-          find build/app/outputs/flutter-apk -type f -name "*.apk" -print
+          echo "========================================"
+          echo "VERIFICANDO APK"
+          echo "========================================"
+
+          find build/app/outputs/flutter-apk \
+            -type f \
+            -name "*.apk" \
+            -print
+
           test -f build/app/outputs/flutter-apk/app-release.apk
+
+          echo ""
+          echo "APK ENCONTRADO COM SUCESSO!"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
@@ -89,6 +122,6 @@ jobs:
 
       - name: Finalizado
         run: |
-          echo "======================================"
+          echo "========================================"
           echo "APK GERADO COM SUCESSO!"
-          echo "======================================"
+          echo "========================================"
