@@ -3,19 +3,14 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:image_background_remover/image_background_remover.dart';
 import 'package:image/image.dart' as img;
+import 'package:image_background_remover/image_background_remover.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  try {
-    await BackgroundRemover.instance.initializeOrt();
-  } catch (_) {}
-
+void main() {
   runApp(const ShopeeApp());
 }
 
@@ -49,14 +44,31 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _linkController =
       TextEditingController();
 
-  File? _imagem;
+  late final Future<void> _backgroundInit;
+
+  File? _imagemOriginal;
+
+  Uint8List? _imagemProduto;
+
+  Uint8List? _imagemCompartilhar;
 
   String _nomeProduto = '';
+
   String _preco = '';
+
   String _textoLido = '';
 
   bool _carregando = false;
-  bool _compartilhando = false;
+
+  String _status = '';
+
+  @override
+  void initState() {
+    super.initState();
+
+    _backgroundInit =
+        BackgroundRemover.instance.initializeOrt();
+  }
 
   @override
   void dispose() {
@@ -73,7 +85,8 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _escolherPrint() async {
     try {
-      final XFile? arquivo = await _picker.pickImage(
+      final XFile? arquivo =
+          await _picker.pickImage(
         source: ImageSource.gallery,
         imageQuality: 100,
       );
@@ -83,23 +96,113 @@ class _HomePageState extends State<HomePage> {
       }
 
       setState(() {
-        _imagem = File(arquivo.path);
-        _carregando = true;
+        _imagemOriginal = File(arquivo.path);
+
+        _imagemProduto = null;
+
+        _imagemCompartilhar = null;
+
         _nomeProduto = '';
+
         _preco = '';
+
         _textoLido = '';
+
+        _carregando = true;
+
+        _status = 'Lendo o print...';
       });
 
-      await _lerTextoDaImagem(arquivo.path);
+      // ----------------------------------------------------------
+      // OCR
+      // ----------------------------------------------------------
+
+      final RecognizedText resultado =
+          await _reconhecerTexto(
+        arquivo.path,
+      );
+
+      final String nome =
+          _encontrarNomeProduto(resultado);
+
+      final String preco =
+          _encontrarPreco(resultado);
+
+      final int limite =
+          _encontrarLimiteDaFoto(resultado);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _nomeProduto = nome;
+
+        _preco = preco;
+
+        _textoLido = resultado.text.trim();
+
+        _status =
+            'Recortando somente a área do produto...';
+      });
+
+      // ----------------------------------------------------------
+      // PROCESSAR PRODUTO
+      // ----------------------------------------------------------
+
+      final Uint8List produtoPng =
+          await _processarProduto(
+        arquivo.path,
+        limite,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _imagemProduto = produtoPng;
+
+        _status =
+            'Montando imagem para compartilhar...';
+      });
+
+      // ----------------------------------------------------------
+      // CRIAR IMAGEM FINAL
+      // ----------------------------------------------------------
+
+      final Uint8List cardPng =
+          await _criarImagemDeCompartilhamento(
+        produtoPng,
+        nome.isEmpty
+            ? 'Produto Shopee'
+            : nome,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _imagemCompartilhar = cardPng;
+
+        _carregando = false;
+
+        _status = '';
+      });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         _carregando = false;
+
+        _status = '';
       });
 
       _mostrarMensagem(
-        'Não foi possível ler o print.\n\n$e',
+        'Não foi possível processar o print.\n\n$e',
       );
     }
   }
@@ -108,7 +211,9 @@ class _HomePageState extends State<HomePage> {
   // OCR
   // ============================================================
 
-  Future<void> _lerTextoDaImagem(String caminho) async {
+  Future<RecognizedText> _reconhecerTexto(
+    String caminho,
+  ) async {
     final TextRecognizer reconhecedor =
         TextRecognizer(
       script: TextRecognitionScript.latin,
@@ -118,309 +223,740 @@ class _HomePageState extends State<HomePage> {
       final InputImage imagem =
           InputImage.fromFilePath(caminho);
 
-      final RecognizedText resultado =
-          await reconhecedor.processImage(imagem);
-
-      final String texto =
-          resultado.text.trim();
-
-      final List<String> linhas = texto
-          .split('\n')
-          .map((linha) => linha.trim())
-          .where((linha) => linha.isNotEmpty)
-          .toList();
-
-      String nome = '';
-      String preco = '';
-
-      // ========================================================
-      // ENCONTRAR PREÇO
-      // ========================================================
-
-      final RegExp regexPreco = RegExp(
-        r'(?:R\$\s*)?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})',
-        caseSensitive: false,
-      );
-
-      for (final String linha in linhas) {
-        final Match? match =
-            regexPreco.firstMatch(linha);
-
-        if (match != null) {
-          preco = match.group(0) ?? '';
-
-          if (preco.isNotEmpty) {
-            break;
-          }
-        }
-      }
-
-      // ========================================================
-      // PALAVRAS QUE NÃO DEVEM SER CONSIDERADAS
-      // ========================================================
-
-      final List<String> palavrasIgnoradas = [
-        'shopee',
-        'comprar',
-        'oferta',
-        'promoção',
-        'promocao',
-        'frete',
-        'grátis',
-        'gratis',
-        'cupom',
-        'avaliações',
-        'avaliacoes',
-        'vendido',
-        'parcelado',
-        'entrega',
-        'compartilhar',
-        'adicionar ao carrinho',
-        'comprar agora',
-        'variações',
-        'variacoes',
-        'comissão',
-        'comissao',
-        'comissão extra',
-        'comissao extra',
-        'afiliados',
-        'promoveram',
-        'aprenda com outros criadores',
-        'tecnologia',
-        'tecnologia store',
-        'favorite',
-        'favoritar',
-        'chat',
-        'ganhar',
-        'compartilhe',
-        'compartilhe para ganhar',
-        'confira aqui',
-        'aproveite a oferta',
-        'compartilhe para',
-        'mil+ vendido',
-        '1mil+ vendido',
-      ];
-
-      // ========================================================
-      // LIMPAR LINHA
-      // ========================================================
-
-      String limparTexto(String texto) {
-        return texto
-            .replaceAll(RegExp(r'\s+'), ' ')
-            .trim();
-      }
-
-      // ========================================================
-      // VERIFICAR SE PARECE NOME DE PRODUTO
-      // ========================================================
-
-      bool pareceNomeProduto(String linha) {
-        final String minuscula =
-            linha.toLowerCase();
-
-        if (linha.length < 12) {
-          return false;
-        }
-
-        if (linha.length > 180) {
-          return false;
-        }
-
-        if (regexPreco.hasMatch(linha)) {
-          return false;
-        }
-
-        for (final String palavra
-            in palavrasIgnoradas) {
-          if (minuscula.contains(palavra)) {
-            return false;
-          }
-        }
-
-        final RegExp temLetras =
-            RegExp(r'[A-Za-zÀ-ÿ]');
-
-        if (!temLetras.hasMatch(linha)) {
-          return false;
-        }
-
-        return true;
-      }
-
-      // ========================================================
-      // CRIAR CANDIDATOS
-      // ========================================================
-
-      final List<String> candidatos = [];
-
-      for (int i = 0; i < linhas.length; i++) {
-        final String atual =
-            limparTexto(linhas[i]);
-
-        if (pareceNomeProduto(atual)) {
-          candidatos.add(atual);
-        }
-
-        // ------------------------------------------------------
-        // DUAS LINHAS
-        // ------------------------------------------------------
-
-        if (i + 1 < linhas.length) {
-          final String segunda =
-              limparTexto(linhas[i + 1]);
-
-          if (pareceNomeProduto(atual) &&
-              pareceNomeProduto(segunda)) {
-            final String combinado =
-                '$atual $segunda';
-
-            if (combinado.length <= 180) {
-              candidatos.add(combinado);
-            }
-          }
-        }
-
-        // ------------------------------------------------------
-        // TRÊS LINHAS
-        // ------------------------------------------------------
-
-        if (i + 2 < linhas.length) {
-          final String segunda =
-              limparTexto(linhas[i + 1]);
-
-          final String terceira =
-              limparTexto(linhas[i + 2]);
-
-          if (pareceNomeProduto(atual) &&
-              pareceNomeProduto(segunda) &&
-              pareceNomeProduto(terceira)) {
-            final String combinado =
-                '$atual $segunda $terceira';
-
-            if (combinado.length <= 180) {
-              candidatos.add(combinado);
-            }
-          }
-        }
-      }
-
-      // ========================================================
-      // ESCOLHER MELHOR CANDIDATO
-      // ========================================================
-
-      int melhorPontuacao = -999999;
-
-      for (final String candidato
-          in candidatos) {
-        final String minuscula =
-            candidato.toLowerCase();
-
-        int pontuacao = 0;
-
-        // Títulos maiores recebem mais pontos.
-        pontuacao += candidato.length;
-
-        // Mais palavras normalmente significa
-        // título mais completo.
-        final int quantidadePalavras =
-            candidato.split(' ').length;
-
-        pontuacao += quantidadePalavras * 8;
-
-        // ------------------------------------------------------
-        // PALAVRAS CARACTERÍSTICAS DE PRODUTO
-        // ------------------------------------------------------
-
-        final List<String> palavrasProduto = [
-          'produto',
-          'cartão',
-          'cartao',
-          'memória',
-          'memoria',
-          'micro',
-          'sd',
-          'usb',
-          'cabo',
-          'carregador',
-          'fone',
-          'celular',
-          'smart',
-          'led',
-          'controle',
-          'adaptador',
-          'velocidade',
-          'alta',
-          'gb',
-          'tb',
-          'hd',
-          'ssd',
-          'kit',
-          'capa',
-          'suporte',
-        ];
-
-        for (final String palavra
-            in palavrasProduto) {
-          if (minuscula.contains(palavra)) {
-            pontuacao += 50;
-          }
-        }
-
-        // Números costumam aparecer em especificações
-        // de produtos.
-        final int quantidadeNumeros =
-            RegExp(r'\d+')
-                .allMatches(candidato)
-                .length;
-
-        pontuacao += quantidadeNumeros * 15;
-
-        if (pontuacao > melhorPontuacao) {
-          melhorPontuacao = pontuacao;
-          nome = candidato;
-        }
-      }
-
-      // ========================================================
-      // CORREÇÃO FINAL
-      // ========================================================
-
-      nome = nome
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
-
-      if (nome.isEmpty ||
-          nome.toLowerCase() == 'tecnologia' ||
-          nome.toLowerCase() == 'tecnologia store') {
-        nome = 'Produto Shopee';
-      }
-
-      // ========================================================
-      // RESULTADO
-      // ========================================================
-
-      if (!mounted) return;
-
-      setState(() {
-        _textoLido = texto;
-        _nomeProduto = nome;
-        _preco = preco;
-        _carregando = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _carregando = false;
-      });
-
-      _mostrarMensagem(
-        'Erro ao reconhecer o texto do print.\n\n$e',
+      return await reconhecedor.processImage(
+        imagem,
       );
     } finally {
       await reconhecedor.close();
     }
+  }
+
+  // ============================================================
+  // NORMALIZAR TEXTO
+  // ============================================================
+
+  String _normalizar(String texto) {
+    return texto
+        .toLowerCase()
+        .replaceAll('á', 'a')
+        .replaceAll('à', 'a')
+        .replaceAll('ã', 'a')
+        .replaceAll('â', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('ê', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ô', 'o')
+        .replaceAll('õ', 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('ç', 'c');
+  }
+
+  // ============================================================
+  // LIMPAR NOME
+  // ============================================================
+
+  String _limparTitulo(String texto) {
+    String resultado =
+        texto.replaceAll('\n', ' ');
+
+    // Remove COMISSÃO EXTRA
+    resultado = resultado.replaceAll(
+      RegExp(
+        r'comiss[aã]o\s*extra',
+        caseSensitive: false,
+      ),
+      '',
+    );
+
+    resultado = resultado.replaceAll(
+      RegExp(
+        r'comissao\s*extra',
+        caseSensitive: false,
+      ),
+      '',
+    );
+
+    resultado = resultado.replaceAll(
+      RegExp(
+        r'comiss[aã]oextra',
+        caseSensitive: false,
+      ),
+      '',
+    );
+
+    // Remove porcentagens
+    resultado = resultado.replaceAll(
+      RegExp(
+        r'\b\d{1,2}(?:[,.]\d+)?\s*%',
+      ),
+      '',
+    );
+
+    // Remove preços
+    resultado = resultado.replaceAll(
+      RegExp(
+        r'(?:R\$\s*)?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})',
+        caseSensitive: false,
+      ),
+      '',
+    );
+
+    resultado =
+        resultado.replaceAll(
+      RegExp(r'\s+'),
+      ' ',
+    ).trim();
+
+    return resultado;
+  }
+
+  // ============================================================
+  // IGNORAR TEXTOS DA SHOPEE
+  // ============================================================
+
+  bool _ehTextoDeInterface(
+    String texto,
+  ) {
+    final String t =
+        _normalizar(texto);
+
+    const List<String> ignorados = [
+      'shopee',
+      'comprar',
+      'oferta',
+      'frete',
+      'cupom',
+      'avaliacao',
+      'avaliacoes',
+      'vendido',
+      'parcelado',
+      'entrega',
+      'compartilhar',
+      'adicionar ao carrinho',
+      'comprar agora',
+      'aprenda com outros criadores',
+      'afiliados promoveram',
+      'mil vendido',
+      'comissao',
+      'comissao extra',
+      'variacoes',
+      'variacao',
+    ];
+
+    for (final String palavra in ignorados) {
+      if (t.contains(palavra)) {
+        return true;
+      }
+    }
+
+    if (RegExp(
+      r'^\d+[,.]?\d*\s*$',
+    ).hasMatch(t)) {
+      return true;
+    }
+
+    if (RegExp(
+      r'^\d+\s*%$',
+    ).hasMatch(t)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // ============================================================
+  // ENCONTRAR NOME DO PRODUTO
+  // ============================================================
+
+  String _encontrarNomeProduto(
+    RecognizedText resultado,
+  ) {
+    final RegExp regexPreco =
+        RegExp(
+      r'(?:R\$\s*)?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})',
+      caseSensitive: false,
+    );
+
+    double? topoPreco;
+
+    // Descobre onde aparece o preço.
+    for (final TextBlock bloco
+        in resultado.blocks) {
+      if (regexPreco.hasMatch(
+        bloco.text,
+      )) {
+        topoPreco ??=
+            bloco.boundingBox.top;
+      }
+    }
+
+    String melhor = '';
+
+    double melhorPontuacao = -999;
+
+    // Analisa os blocos reconhecidos pelo OCR.
+    for (final TextBlock bloco
+        in resultado.blocks) {
+      String candidato =
+          _limparTitulo(
+        bloco.text,
+      );
+
+      if (candidato.isEmpty) {
+        continue;
+      }
+
+      if (_ehTextoDeInterface(
+        candidato,
+      )) {
+        continue;
+      }
+
+      final String normalizado =
+          _normalizar(candidato);
+
+      final List<String> palavras =
+          candidato
+              .split(RegExp(r'\s+'))
+              .where(
+                (p) => p.trim().isNotEmpty,
+              )
+              .toList();
+
+      // Não aceita palavras isoladas.
+      if (palavras.length < 2) {
+        continue;
+      }
+
+      if (candidato.length < 10) {
+        continue;
+      }
+
+      if (candidato.length > 180) {
+        candidato =
+            candidato.substring(
+          0,
+          180,
+        ).trim();
+      }
+
+      double pontuacao = 0;
+
+      pontuacao +=
+          palavras.length * 2;
+
+      pontuacao +=
+          candidato.length / 20;
+
+      // O título normalmente aparece depois do preço.
+      if (topoPreco != null &&
+          bloco.boundingBox.top >
+              topoPreco!) {
+        pontuacao += 20;
+      }
+
+      // Palavras que normalmente aparecem em nomes de produtos.
+      if (normalizado.contains(
+            'oximetro',
+          ) ||
+          normalizado.contains(
+            'cartao',
+          ) ||
+          normalizado.contains(
+            'memoria',
+          ) ||
+          normalizado.contains(
+            'micro sd',
+          ) ||
+          normalizado.contains(
+            'ssd',
+          ) ||
+          normalizado.contains(
+            'fone',
+          ) ||
+          normalizado.contains(
+            'mouse',
+          ) ||
+          normalizado.contains(
+            'teclado',
+          ) ||
+          normalizado.contains(
+            'celular',
+          ) ||
+          normalizado.contains(
+            'carregador',
+          ) ||
+          normalizado.contains(
+            'camera',
+          ) ||
+          normalizado.contains(
+            'relogio',
+          )) {
+        pontuacao += 10;
+      }
+
+      if (pontuacao >
+          melhorPontuacao) {
+        melhorPontuacao =
+            pontuacao;
+
+        melhor = candidato;
+      }
+    }
+
+    // Último recurso.
+    if (melhor.isEmpty) {
+      final List<String> linhas =
+          resultado.text
+              .split('\n')
+              .map(
+                _limparTitulo,
+              )
+              .where(
+                (linha) =>
+                    linha.length >= 10 &&
+                    !_ehTextoDeInterface(
+                      linha,
+                    ),
+              )
+              .toList();
+
+      if (linhas.isNotEmpty) {
+        melhor = linhas.first;
+      }
+    }
+
+    return melhor;
+  }
+
+  // ============================================================
+  // ENCONTRAR PREÇO
+  // ============================================================
+
+  String _encontrarPreco(
+    RecognizedText resultado,
+  ) {
+    final RegExp regexPreco =
+        RegExp(
+      r'(?:R\$\s*)?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})',
+      caseSensitive: false,
+    );
+
+    final List<String> precos = [];
+
+    for (final TextBlock bloco
+        in resultado.blocks) {
+      final Iterable<Match> matches =
+          regexPreco.allMatches(
+        bloco.text,
+      );
+
+      for (final Match match
+          in matches) {
+        String valor =
+            match.group(0) ?? '';
+
+        valor =
+            valor.replaceAll(
+          RegExp(r'\s+'),
+          '',
+        );
+
+        if (valor.isNotEmpty &&
+            !precos.contains(valor)) {
+          precos.add(valor);
+        }
+      }
+    }
+
+    if (precos.isEmpty) {
+      return '';
+    }
+
+    return precos.first;
+  }
+
+  // ============================================================
+  // ENCONTRAR FIM DA FOTO PRINCIPAL
+  // ============================================================
+
+  int _encontrarLimiteDaFoto(
+    RecognizedText resultado,
+  ) {
+    double? limite;
+
+    // Primeiro procura "variações".
+    for (final TextBlock bloco
+        in resultado.blocks) {
+      final String t =
+          _normalizar(bloco.text);
+
+      if (t.contains('variacao')) {
+        final double y =
+            bloco.boundingBox.top - 18;
+
+        if (y > 250) {
+          limite = y;
+
+          break;
+        }
+      }
+    }
+
+    // Se não encontrou "variações",
+    // procura o primeiro preço.
+    if (limite == null) {
+      final RegExp regexPreco =
+          RegExp(
+        r'(?:R\$\s*)?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})',
+        caseSensitive: false,
+      );
+
+      for (final TextBlock bloco
+          in resultado.blocks) {
+        if (regexPreco.hasMatch(
+          bloco.text,
+        )) {
+          final double y =
+              bloco.boundingBox.top - 18;
+
+          if (y > 250) {
+            limite = y;
+
+            break;
+          }
+        }
+      }
+    }
+
+    // Se o OCR não encontrar nada,
+    // o processamento usará um fallback.
+    return limite?.round() ?? 0;
+  }
+
+  // ============================================================
+  // RECORTAR + REMOVER FUNDO
+  // ============================================================
+
+  Future<Uint8List> _processarProduto(
+    String caminho,
+    int limiteDetectado,
+  ) async {
+    await _backgroundInit;
+
+    final Uint8List bytes =
+        await File(caminho).readAsBytes();
+
+    final img.Image? original =
+        img.decodeImage(bytes);
+
+    if (original == null) {
+      throw Exception(
+        'Não foi possível abrir a imagem.',
+      );
+    }
+
+    int limite =
+        limiteDetectado;
+
+    // Se o OCR não encontrou o limite,
+    // usa aproximadamente a metade superior.
+    if (limite <= 0 ||
+        limite > original.height) {
+      limite =
+          (original.height * 0.55)
+              .round();
+    }
+
+    if (limite < 300) {
+      limite = original.height;
+    }
+
+    if (limite > original.height) {
+      limite = original.height;
+    }
+
+    // ----------------------------------------------------------
+    // RECORTE DA PARTE PRINCIPAL
+    // ----------------------------------------------------------
+
+    final img.Image recorte =
+        img.copyCrop(
+      original,
+      x: 0,
+      y: 0,
+      width: original.width,
+      height: limite,
+    );
+
+    // ----------------------------------------------------------
+    // REDUZ IMAGEM MUITO GRANDE
+    // ----------------------------------------------------------
+
+    img.Image imagemParaIA =
+        recorte;
+
+    const int maiorLado = 1800;
+
+    if (imagemParaIA.width >
+            maiorLado ||
+        imagemParaIA.height >
+            maiorLado) {
+      if (imagemParaIA.width >=
+          imagemParaIA.height) {
+        imagemParaIA =
+            img.copyResize(
+          imagemParaIA,
+          width: maiorLado,
+        );
+      } else {
+        imagemParaIA =
+            img.copyResize(
+          imagemParaIA,
+          height: maiorLado,
+        );
+      }
+    }
+
+    final Uint8List recortePng =
+        Uint8List.fromList(
+      img.encodePng(
+        imagemParaIA,
+      ),
+    );
+
+    // ----------------------------------------------------------
+    // REMOVE FUNDO
+    // ----------------------------------------------------------
+
+    final ui.Image imagemSemFundo =
+        await BackgroundRemover
+            .instance
+            .removeBg(
+      recortePng,
+      threshold: 0.45,
+      smoothMask: true,
+      enhanceEdges: true,
+    );
+
+    final ByteData? dados =
+        await imagemSemFundo.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+
+    if (dados == null) {
+      throw Exception(
+        'Não foi possível processar o produto.',
+      );
+    }
+
+    return dados.buffer
+        .asUint8List();
+  }
+
+  // ============================================================
+  // CRIAR IMAGEM FINAL
+  // ============================================================
+
+  Future<Uint8List>
+      _criarImagemDeCompartilhamento(
+    Uint8List produtoBytes,
+    String nome,
+  ) async {
+    final ui.Codec codec =
+        await ui.instantiateImageCodec(
+      produtoBytes,
+    );
+
+    final ui.FrameInfo frame =
+        await codec.getNextFrame();
+
+    final ui.Image produto =
+        frame.image;
+
+    const double largura = 1080;
+
+    const double alturaFoto = 760;
+
+    const double margem = 50;
+
+    // ----------------------------------------------------------
+    // TEXTO DO NOME
+    // ----------------------------------------------------------
+
+    final TextPainter titulo =
+        TextPainter(
+      text: TextSpan(
+        text: nome,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 48,
+          fontWeight:
+              FontWeight.bold,
+          height: 1.15,
+        ),
+      ),
+      textAlign:
+          TextAlign.center,
+      textDirection:
+          TextDirection.ltr,
+      maxLines: 5,
+      ellipsis: '...',
+    );
+
+    titulo.layout(
+      maxWidth:
+          largura - (margem * 2),
+    );
+
+    final double alturaFaixa =
+        (titulo.height + 80)
+            .clamp(
+      170.0,
+      430.0,
+    );
+
+    final double alturaTotal =
+        alturaFoto +
+            alturaFaixa;
+
+    // ----------------------------------------------------------
+    // CANVAS
+    // ----------------------------------------------------------
+
+    final ui.PictureRecorder
+        recorder =
+        ui.PictureRecorder();
+
+    final Canvas canvas =
+        Canvas(recorder);
+
+    final Paint branco =
+        Paint()
+          ..color =
+              Colors.white;
+
+    final Paint verde =
+        Paint()
+          ..color =
+              const Color(
+            0xFF08603E,
+          );
+
+    // Fundo branco da foto.
+    canvas.drawRect(
+      Rect.fromLTWH(
+        0,
+        0,
+        largura,
+        alturaFoto,
+      ),
+      branco,
+    );
+
+    // Faixa verde.
+    canvas.drawRect(
+      Rect.fromLTWH(
+        0,
+        alturaFoto,
+        largura,
+        alturaFaixa,
+      ),
+      verde,
+    );
+
+    // ----------------------------------------------------------
+    // AJUSTAR PRODUTO SEM DEFORMAR
+    // ----------------------------------------------------------
+
+    final double escalaX =
+        (largura -
+                margem * 2) /
+            produto.width;
+
+    final double escalaY =
+        (alturaFoto -
+                margem * 2) /
+            produto.height;
+
+    final double escala =
+        escalaX < escalaY
+            ? escalaX
+            : escalaY;
+
+    final double destinoLargura =
+        produto.width * escala;
+
+    final double destinoAltura =
+        produto.height * escala;
+
+    final double destinoX =
+        (largura -
+                destinoLargura) /
+            2;
+
+    final double destinoY =
+        (alturaFoto -
+                destinoAltura) /
+            2;
+
+    canvas.drawImageRect(
+      produto,
+      Rect.fromLTWH(
+        0,
+        0,
+        produto.width
+            .toDouble(),
+        produto.height
+            .toDouble(),
+      ),
+      Rect.fromLTWH(
+        destinoX,
+        destinoY,
+        destinoLargura,
+        destinoAltura,
+      ),
+      Paint()
+        ..filterQuality =
+            FilterQuality.high,
+    );
+
+    // ----------------------------------------------------------
+    // NOME NA FAIXA VERDE
+    // ----------------------------------------------------------
+
+    titulo.paint(
+      canvas,
+      Offset(
+        margem,
+        alturaFoto + 40,
+      ),
+    );
+
+    final ui.Picture picture =
+        recorder.endRecording();
+
+    final ui.Image imagemFinal =
+        await picture.toImage(
+      largura.toInt(),
+      alturaTotal.toInt(),
+    );
+
+    final ByteData? dados =
+        await imagemFinal.toByteData(
+      format:
+          ui.ImageByteFormat.png,
+    );
+
+    if (dados == null) {
+      throw Exception(
+        'Não foi possível criar a imagem final.',
+      );
+    }
+
+    return dados.buffer
+        .asUint8List();
   }
 
   // ============================================================
@@ -435,9 +971,14 @@ class _HomePageState extends State<HomePage> {
       return '';
     }
 
-    if (!link.startsWith('http://') &&
-        !link.startsWith('https://')) {
-      link = 'https://$link';
+    if (!link.startsWith(
+          'http://',
+        ) &&
+        !link.startsWith(
+          'https://',
+        )) {
+      link =
+          'https://$link';
     }
 
     return link;
@@ -476,341 +1017,7 @@ $link
   }
 
   // ============================================================
-  // CRIAR IMAGEM FINAL
-  //
-  // RESULTADO:
-  //
-  // ┌─────────────────────────────┐
-  // │                             │
-  // │       PRODUTO RECORTADO     │
-  // │       FUNDO BRANCO          │
-  // │                             │
-  // ├─────────────────────────────┤
-  // │ NOME DO PRODUTO             │
-  // │ EM FAIXA VERDE              │
-  // └─────────────────────────────┘
-  //
-  // ============================================================
-
-  Future<File> _criarImagemFinal() async {
-    if (_imagem == null) {
-      throw Exception(
-        'Nenhuma imagem foi selecionada.',
-      );
-    }
-
-    // ----------------------------------------------------------
-    // LER IMAGEM ORIGINAL
-    // ----------------------------------------------------------
-
-    final Uint8List bytesOriginais =
-        await _imagem!.readAsBytes();
-
-    // ----------------------------------------------------------
-    // REMOVER FUNDO
-    // ----------------------------------------------------------
-
-    final ui.Image imagemSemFundo =
-        await BackgroundRemover.instance.removeBg(
-      bytesOriginais,
-      threshold: 0.45,
-      smoothMask: true,
-      enhanceEdges: true,
-    );
-
-    // ----------------------------------------------------------
-    // CONVERTER UI IMAGE PARA PNG
-    // ----------------------------------------------------------
-
-    final ByteData? dados =
-        await imagemSemFundo.toByteData(
-      format: ui.ImageByteFormat.png,
-    );
-
-    if (dados == null) {
-      throw Exception(
-        'Não foi possível processar a imagem.',
-      );
-    }
-
-    final Uint8List pngSemFundo =
-        dados.buffer.asUint8List();
-
-    // ----------------------------------------------------------
-    // DECODIFICAR
-    // ----------------------------------------------------------
-
-    final img.Image? imagemProcessada =
-        img.decodeImage(pngSemFundo);
-
-    if (imagemProcessada == null) {
-      throw Exception(
-        'Não foi possível decodificar a imagem.',
-      );
-    }
-
-    // ----------------------------------------------------------
-    // RECORTAR TODO O ESPAÇO TRANSPARENTE
-    // ----------------------------------------------------------
-
-    final img.Image produtoRecortado =
-        img.trim(
-      imagemProcessada,
-      mode: img.TrimMode.transparent,
-      padding: 25,
-    );
-
-    // ----------------------------------------------------------
-    // CONVERTER NOVAMENTE PARA PNG
-    // ----------------------------------------------------------
-
-    final Uint8List produtoPng =
-        Uint8List.fromList(
-      img.encodePng(produtoRecortado),
-    );
-
-    // ----------------------------------------------------------
-    // TRANSFORMAR EM UI IMAGE
-    // ----------------------------------------------------------
-
-    final ui.Codec codec =
-        await ui.instantiateImageCodec(
-      produtoPng,
-    );
-
-    final ui.FrameInfo frame =
-        await codec.getNextFrame();
-
-    final ui.Image produto =
-        frame.image;
-
-    // ----------------------------------------------------------
-    // TAMANHO DA IMAGEM FINAL
-    // ----------------------------------------------------------
-
-    const double largura = 1080;
-
-    const double alturaImagemProduto = 900;
-
-    const double alturaFaixa = 330;
-
-    const double alturaTotal =
-        alturaImagemProduto + alturaFaixa;
-
-    // ----------------------------------------------------------
-    // CRIAR CANVAS
-    // ----------------------------------------------------------
-
-    final ui.PictureRecorder recorder =
-        ui.PictureRecorder();
-
-    final Canvas canvas =
-        Canvas(recorder);
-
-    // ----------------------------------------------------------
-    // FUNDO BRANCO
-    // ----------------------------------------------------------
-
-    final Paint fundoBranco =
-        Paint()
-          ..color = Colors.white;
-
-    canvas.drawRect(
-      const Rect.fromLTWH(
-        0,
-        0,
-        largura,
-        alturaTotal,
-      ),
-      fundoBranco,
-    );
-
-    // ----------------------------------------------------------
-    // DESENHAR PRODUTO
-    // ----------------------------------------------------------
-
-    const double margem =
-        45;
-
-    final double areaLargura =
-        largura - (margem * 2);
-
-    final double areaAltura =
-        alturaImagemProduto - (margem * 2);
-
-    final double escalaX =
-        areaLargura / produto.width;
-
-    final double escalaY =
-        areaAltura / produto.height;
-
-    final double escala =
-        escalaX < escalaY
-            ? escalaX
-            : escalaY;
-
-    final double produtoLargura =
-        produto.width * escala;
-
-    final double produtoAltura =
-        produto.height * escala;
-
-    final double produtoX =
-        (largura - produtoLargura) / 2;
-
-    final double produtoY =
-        (alturaImagemProduto -
-                produtoAltura) /
-            2;
-
-    final Rect destinoProduto =
-        Rect.fromLTWH(
-      produtoX,
-      produtoY,
-      produtoLargura,
-      produtoAltura,
-    );
-
-    final Paint paintProduto =
-        Paint()
-          ..filterQuality =
-              FilterQuality.high;
-
-    canvas.drawImageRect(
-      produto,
-      Rect.fromLTWH(
-        0,
-        0,
-        produto.width.toDouble(),
-        produto.height.toDouble(),
-      ),
-      destinoProduto,
-      paintProduto,
-    );
-
-    // ----------------------------------------------------------
-    // FAIXA VERDE
-    // ----------------------------------------------------------
-
-    final Paint faixaVerde =
-        Paint()
-          ..color =
-              const Color(0xFF075E3D);
-
-    canvas.drawRect(
-      Rect.fromLTWH(
-        0,
-        alturaImagemProduto,
-        largura,
-        alturaFaixa,
-      ),
-      faixaVerde,
-    );
-
-    // ----------------------------------------------------------
-    // NOME DO PRODUTO
-    // ----------------------------------------------------------
-
-    String nome =
-        _nomeProduto.trim();
-
-    if (nome.isEmpty) {
-      nome = 'Produto Shopee';
-    }
-
-    final TextPainter textoPainter =
-        TextPainter(
-      text: TextSpan(
-        text: nome,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 44,
-          fontWeight: FontWeight.bold,
-          height: 1.15,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      textAlign: TextAlign.center,
-      maxLines: 4,
-      ellipsis: '...',
-    );
-
-    textoPainter.layout(
-      maxWidth: largura - 100,
-    );
-
-    final double textoX =
-        (largura -
-                textoPainter.width) /
-            2;
-
-    final double textoY =
-        alturaImagemProduto +
-        (alturaFaixa -
-                textoPainter.height) /
-            2;
-
-    textoPainter.paint(
-      canvas,
-      Offset(
-        textoX,
-        textoY,
-      ),
-    );
-
-    // ----------------------------------------------------------
-    // FINALIZAR CANVAS
-    // ----------------------------------------------------------
-
-    final ui.Picture picture =
-        recorder.endRecording();
-
-    final ui.Image imagemFinal =
-        await picture.toImage(
-      largura.toInt(),
-      alturaTotal.toInt(),
-    );
-
-    // ----------------------------------------------------------
-    // CONVERTER PARA PNG
-    // ----------------------------------------------------------
-
-    final ByteData? bytesFinais =
-        await imagemFinal.toByteData(
-      format: ui.ImageByteFormat.png,
-    );
-
-    if (bytesFinais == null) {
-      throw Exception(
-        'Não foi possível criar a imagem final.',
-      );
-    }
-
-    final Uint8List pngFinal =
-        bytesFinais.buffer.asUint8List();
-
-    // ----------------------------------------------------------
-    // SALVAR TEMPORARIAMENTE
-    // ----------------------------------------------------------
-
-    final String nomeArquivo =
-        'divulgacao_shopee_${DateTime.now().millisecondsSinceEpoch}.png';
-
-    final File arquivoFinal =
-        File(
-      '${Directory.systemTemp.path}/$nomeArquivo',
-    );
-
-    await arquivoFinal.writeAsBytes(
-      pngFinal,
-      flush: true,
-    );
-
-    return arquivoFinal;
-  }
-
-  // ============================================================
-  // COMPARTILHAR FOTO + TEXTO
+  // COMPARTILHAR
   // ============================================================
 
   Future<void> _compartilhar() async {
@@ -821,72 +1028,57 @@ $link
       _mostrarMensagem(
         'Digite o seu link de afiliado antes de compartilhar.',
       );
+
       return;
     }
 
-    if (_imagem == null) {
+    if (_imagemCompartilhar ==
+        null) {
       _mostrarMensagem(
         'Escolha o print do produto primeiro.',
       );
+
       return;
     }
-
-    if (_compartilhando) {
-      return;
-    }
-
-    setState(() {
-      _compartilhando = true;
-    });
 
     try {
-      _mostrarMensagem(
-        'Preparando a imagem do produto...',
+      final Directory pasta =
+          await getTemporaryDirectory();
+
+      final File arquivoFinal =
+          File(
+        '${pasta.path}/divulgacao_shopee.png',
       );
 
-      // --------------------------------------------------------
-      // CRIAR IMAGEM RECORTADA
-      // --------------------------------------------------------
-
-      final File imagemFinal =
-          await _criarImagemFinal();
-
-      // --------------------------------------------------------
-      // TEXTO
-      // --------------------------------------------------------
-
-      final String texto =
-          _gerarTextoDivulgacao();
-
-      // --------------------------------------------------------
-      // COMPARTILHAR
-      // --------------------------------------------------------
+      await arquivoFinal
+          .writeAsBytes(
+        _imagemCompartilhar!,
+        flush: true,
+      );
 
       await SharePlus.instance.share(
         ShareParams(
-          text: texto,
+          text:
+              _gerarTextoDivulgacao(),
           subject:
               'Oferta Shopee - $_nomeProduto',
           files: [
             XFile(
-              imagemFinal.path,
-              mimeType: 'image/png',
+              arquivoFinal.path,
+              mimeType:
+                  'image/png',
             ),
           ],
         ),
       );
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       _mostrarMensagem(
-        'Não foi possível criar a divulgação.\n\n$e',
+        'Não foi possível compartilhar.\n\n$e',
       );
-    } finally {
-      if (!mounted) return;
-
-      setState(() {
-        _compartilhando = false;
-      });
     }
   }
 
@@ -894,7 +1086,8 @@ $link
   // COMPARTILHAR SOMENTE TEXTO
   // ============================================================
 
-  Future<void> _copiarTexto() async {
+  Future<void>
+      _compartilharSomenteTexto() async {
     final String link =
         _obterLink();
 
@@ -902,15 +1095,14 @@ $link
       _mostrarMensagem(
         'Digite o seu link de afiliado primeiro.',
       );
+
       return;
     }
 
-    final String texto =
-        _gerarTextoDivulgacao();
-
     await SharePlus.instance.share(
       ShareParams(
-        text: texto,
+        text:
+            _gerarTextoDivulgacao(),
       ),
     );
   }
@@ -921,10 +1113,20 @@ $link
 
   void _limpar() {
     setState(() {
-      _imagem = null;
+      _imagemOriginal = null;
+
+      _imagemProduto = null;
+
+      _imagemCompartilhar = null;
+
       _nomeProduto = '';
+
       _preco = '';
+
       _textoLido = '';
+
+      _status = '';
+
       _linkController.clear();
     });
   }
@@ -936,12 +1138,12 @@ $link
   void _mostrarMensagem(
     String mensagem,
   ) {
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context)
-        .showSnackBar(
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(
       SnackBar(
-        content: Text(mensagem),
+        content:
+            Text(mensagem),
         behavior:
             SnackBarBehavior.floating,
       ),
@@ -964,7 +1166,8 @@ $link
         title: const Text(
           'Divulgador Shopee',
           style: TextStyle(
-            fontWeight: FontWeight.bold,
+            fontWeight:
+                FontWeight.bold,
           ),
         ),
         centerTitle: true,
@@ -975,50 +1178,45 @@ $link
       ),
 
       body: SafeArea(
-        child: SingleChildScrollView(
+        child:
+            SingleChildScrollView(
           padding:
-              const EdgeInsets.all(18),
-
+              const EdgeInsets.all(
+            18,
+          ),
           child: Column(
             crossAxisAlignment:
-                CrossAxisAlignment.stretch,
-
+                CrossAxisAlignment
+                    .stretch,
             children: [
-
-              // =================================================
+              // ------------------------------------------------
               // LINK
-              // =================================================
+              // ------------------------------------------------
 
               TextField(
                 controller:
                     _linkController,
-
                 keyboardType:
                     TextInputType.url,
-
                 decoration:
                     InputDecoration(
                   labelText:
                       'Link do produto / link de afiliado',
-
                   hintText:
                       'Cole seu link aqui',
-
                   prefixIcon:
                       const Icon(
                     Icons.link,
                   ),
-
                   border:
                       OutlineInputBorder(
                     borderRadius:
-                        BorderRadius.circular(
+                        BorderRadius
+                            .circular(
                       18,
                     ),
                   ),
-
                   filled: true,
-
                   fillColor:
                       Colors.white,
                 ),
@@ -1028,42 +1226,42 @@ $link
                 height: 14,
               ),
 
-              // =================================================
-              // ESCOLHER PRINT
-              // =================================================
+              // ------------------------------------------------
+              // BOTÃO
+              // ------------------------------------------------
 
               ElevatedButton.icon(
                 onPressed:
                     _carregando
                         ? null
                         : _escolherPrint,
-
                 icon:
                     const Icon(
                   Icons.photo_library,
                 ),
-
                 label:
                     const Text(
                   'ESCOLHER FOTO / PRINT DO PRODUTO',
-                  style: TextStyle(
+                  style:
+                      TextStyle(
                     fontSize: 16,
                     fontWeight:
                         FontWeight.bold,
                   ),
                 ),
-
                 style:
-                    ElevatedButton.styleFrom(
+                    ElevatedButton
+                        .styleFrom(
                   padding:
-                      const EdgeInsets.symmetric(
+                      const EdgeInsets
+                          .symmetric(
                     vertical: 18,
                   ),
-
                   shape:
                       RoundedRectangleBorder(
                     borderRadius:
-                        BorderRadius.circular(
+                        BorderRadius
+                            .circular(
                       18,
                     ),
                   ),
@@ -1074,71 +1272,74 @@ $link
                 height: 18,
               ),
 
-              // =================================================
+              // ------------------------------------------------
               // CARREGANDO
-              // =================================================
+              // ------------------------------------------------
 
               if (_carregando)
-                const Card(
+                Card(
                   child:
                       Padding(
                     padding:
-                        EdgeInsets.all(20),
-
+                        const EdgeInsets
+                            .all(
+                      20,
+                    ),
                     child:
                         Column(
                       children: [
+                        const CircularProgressIndicator(),
 
-                        CircularProgressIndicator(),
-
-                        SizedBox(
+                        const SizedBox(
                           height: 12,
                         ),
 
                         Text(
-                          'Lendo o nome e o preço do produto...',
+                          _status.isEmpty
+                              ? 'Processando...'
+                              : _status,
                           textAlign:
-                              TextAlign.center,
+                              TextAlign
+                                  .center,
                         ),
                       ],
                     ),
                   ),
                 ),
 
-              // =================================================
-              // FOTO ORIGINAL
-              // =================================================
+              // ------------------------------------------------
+              // PRODUTO RECORTADO
+              // ------------------------------------------------
 
-              if (_imagem != null &&
+              if (_imagemProduto !=
+                      null &&
                   !_carregando)
                 Card(
                   clipBehavior:
                       Clip.antiAlias,
-
                   child:
                       Column(
                     children: [
-
                       const Padding(
                         padding:
-                            EdgeInsets.all(12),
-
+                            EdgeInsets
+                                .all(
+                          12,
+                        ),
                         child:
                             Row(
                           children: [
-
                             Icon(
-                              Icons.image,
+                              Icons
+                                  .auto_awesome,
                               color:
                                   Colors.deepOrange,
                             ),
-
                             SizedBox(
                               width: 8,
                             ),
-
                             Text(
-                              'PRINT ORIGINAL',
+                              'PRODUTO RECORTADO',
                               style:
                                   TextStyle(
                                 fontWeight:
@@ -1149,16 +1350,23 @@ $link
                         ),
                       ),
 
-                      Image.file(
-                        _imagem!,
-
-                        height: 300,
-
-                        width:
-                            double.infinity,
-
-                        fit:
-                            BoxFit.contain,
+                      Container(
+                        color:
+                            Colors.white,
+                        padding:
+                            const EdgeInsets
+                                .all(
+                          12,
+                        ),
+                        child:
+                            Image.memory(
+                          _imagemProduto!,
+                          height: 300,
+                          width:
+                              double.infinity,
+                          fit: BoxFit
+                              .contain,
+                        ),
                       ),
                     ],
                   ),
@@ -1168,39 +1376,97 @@ $link
                 height: 15,
               ),
 
-              // =================================================
-              // RESULTADO OCR
-              // =================================================
+              // ------------------------------------------------
+              // IMAGEM FINAL
+              // ------------------------------------------------
+
+              if (_imagemCompartilhar !=
+                      null &&
+                  !_carregando)
+                Card(
+                  clipBehavior:
+                      Clip.antiAlias,
+                  child:
+                      Column(
+                    children: [
+                      const Padding(
+                        padding:
+                            EdgeInsets
+                                .all(
+                          12,
+                        ),
+                        child:
+                            Row(
+                          children: [
+                            Icon(
+                              Icons
+                                  .share,
+                              color:
+                                  Colors.deepOrange,
+                            ),
+                            SizedBox(
+                              width: 8,
+                            ),
+                            Text(
+                              'IMAGEM QUE SERÁ COMPARTILHADA',
+                              style:
+                                  TextStyle(
+                                fontWeight:
+                                    FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      Image.memory(
+                        _imagemCompartilhar!,
+                        width:
+                            double.infinity,
+                        fit: BoxFit
+                            .contain,
+                      ),
+                    ],
+                  ),
+                ),
+
+              const SizedBox(
+                height: 15,
+              ),
+
+              // ------------------------------------------------
+              // INFORMAÇÕES
+              // ------------------------------------------------
 
               if (!_carregando &&
                   (_nomeProduto
                           .isNotEmpty ||
-                      _preco.isNotEmpty))
+                      _preco
+                          .isNotEmpty))
                 Card(
                   elevation: 2,
-
                   child:
                       Padding(
                     padding:
-                        const EdgeInsets.all(
+                        const EdgeInsets
+                            .all(
                       18,
                     ),
-
                     child:
                         Column(
                       crossAxisAlignment:
                           CrossAxisAlignment
                               .start,
-
                       children: [
-
                         const Text(
                           'INFORMAÇÕES ENCONTRADAS',
                           style:
                               TextStyle(
-                            fontSize: 14,
+                            fontSize:
+                                14,
                             fontWeight:
-                                FontWeight.bold,
+                                FontWeight
+                                    .bold,
                             color:
                                 Colors.grey,
                           ),
@@ -1217,7 +1483,8 @@ $link
                             color:
                                 Colors.grey,
                             fontWeight:
-                                FontWeight.bold,
+                                FontWeight
+                                    .bold,
                           ),
                         ),
 
@@ -1230,12 +1497,13 @@ $link
                                   .isEmpty
                               ? 'Não identificado'
                               : _nomeProduto,
-
                           style:
                               const TextStyle(
-                            fontSize: 19,
+                            fontSize:
+                                20,
                             fontWeight:
-                                FontWeight.bold,
+                                FontWeight
+                                    .bold,
                           ),
                         ),
 
@@ -1250,7 +1518,8 @@ $link
                             color:
                                 Colors.grey,
                             fontWeight:
-                                FontWeight.bold,
+                                FontWeight
+                                    .bold,
                           ),
                         ),
 
@@ -1259,15 +1528,17 @@ $link
                         ),
 
                         Text(
-                          _preco.isEmpty
+                          _preco
+                                  .isEmpty
                               ? 'Não identificado'
                               : _preco,
-
                           style:
                               const TextStyle(
-                            fontSize: 22,
+                            fontSize:
+                                22,
                             fontWeight:
-                                FontWeight.bold,
+                                FontWeight
+                                    .bold,
                             color:
                                 Colors.deepOrange,
                           ),
@@ -1277,9 +1548,9 @@ $link
                   ),
                 ),
 
-              // =================================================
+              // ------------------------------------------------
               // TEXTO DETECTADO
-              // =================================================
+              // ------------------------------------------------
 
               if (_textoLido
                   .isNotEmpty)
@@ -1288,15 +1559,13 @@ $link
                       const Text(
                     'Ver texto detectado no print',
                   ),
-
                   children: [
-
                     Padding(
                       padding:
-                          const EdgeInsets.all(
+                          const EdgeInsets
+                              .all(
                         16,
                       ),
-
                       child:
                           SelectableText(
                         _textoLido,
@@ -1309,66 +1578,48 @@ $link
                 height: 12,
               ),
 
-              // =================================================
+              // ------------------------------------------------
               // COMPARTILHAR
-              // =================================================
+              // ------------------------------------------------
 
-              if (_nomeProduto
-                      .isNotEmpty ||
-                  _preco.isNotEmpty)
+              if (_imagemCompartilhar !=
+                  null)
                 ElevatedButton.icon(
                   onPressed:
-                      _compartilhando
-                          ? null
-                          : _compartilhar,
-
+                      _compartilhar,
                   icon:
-                      _compartilhando
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child:
-                                  CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color:
-                                    Colors.white,
-                              ),
-                            )
-                          : const Icon(
-                              Icons.image,
-                            ),
-
+                      const Icon(
+                    Icons.image,
+                  ),
                   label:
-                      Text(
-                    _compartilhando
-                        ? 'CRIANDO IMAGEM...'
-                        : 'COMPARTILHAR FOTO + DIVULGAÇÃO',
-
+                      const Text(
+                    'COMPARTILHAR FOTO + DIVULGAÇÃO',
                     style:
-                        const TextStyle(
+                        TextStyle(
                       fontSize: 16,
                       fontWeight:
-                          FontWeight.bold,
+                          FontWeight
+                              .bold,
                     ),
                   ),
-
                   style:
-                      ElevatedButton.styleFrom(
+                      ElevatedButton
+                          .styleFrom(
                     backgroundColor:
-                        Colors.deepOrange,
-
+                        Colors
+                            .deepOrange,
                     foregroundColor:
                         Colors.white,
-
                     padding:
-                        const EdgeInsets.symmetric(
+                        const EdgeInsets
+                            .symmetric(
                       vertical: 18,
                     ),
-
                     shape:
                         RoundedRectangleBorder(
                       borderRadius:
-                          BorderRadius.circular(
+                          BorderRadius
+                              .circular(
                         18,
                       ),
                     ),
@@ -1379,38 +1630,38 @@ $link
                 height: 10,
               ),
 
-              // =================================================
+              // ------------------------------------------------
               // SOMENTE TEXTO
-              // =================================================
+              // ------------------------------------------------
 
               if (_nomeProduto
                       .isNotEmpty ||
-                  _preco.isNotEmpty)
+                  _preco
+                      .isNotEmpty)
                 OutlinedButton.icon(
                   onPressed:
-                      _copiarTexto,
-
+                      _compartilharSomenteTexto,
                   icon:
                       const Icon(
                     Icons.text_fields,
                   ),
-
                   label:
                       const Text(
                     'COMPARTILHAR SOMENTE TEXTO',
                   ),
-
                   style:
-                      OutlinedButton.styleFrom(
+                      OutlinedButton
+                          .styleFrom(
                     padding:
-                        const EdgeInsets.symmetric(
+                        const EdgeInsets
+                            .symmetric(
                       vertical: 15,
                     ),
-
                     shape:
                         RoundedRectangleBorder(
                       borderRadius:
-                          BorderRadius.circular(
+                          BorderRadius
+                              .circular(
                         18,
                       ),
                     ),
@@ -1421,36 +1672,36 @@ $link
                 height: 10,
               ),
 
-              // =================================================
+              // ------------------------------------------------
               // LIMPAR
-              // =================================================
+              // ------------------------------------------------
 
-              if (_imagem != null)
+              if (_imagemOriginal !=
+                  null)
                 OutlinedButton.icon(
                   onPressed:
                       _limpar,
-
                   icon:
                       const Icon(
                     Icons.refresh,
                   ),
-
                   label:
                       const Text(
                     'LIMPAR',
                   ),
-
                   style:
-                      OutlinedButton.styleFrom(
+                      OutlinedButton
+                          .styleFrom(
                     padding:
-                        const EdgeInsets.symmetric(
+                        const EdgeInsets
+                            .symmetric(
                       vertical: 15,
                     ),
-
                     shape:
                         RoundedRectangleBorder(
                       borderRadius:
-                          BorderRadius.circular(
+                          BorderRadius
+                              .circular(
                         18,
                       ),
                     ),
@@ -1462,13 +1713,11 @@ $link
               ),
 
               const Text(
-                'O aplicativo identifica o nome e o preço '
-                'do produto, remove o fundo da imagem e '
-                'cria uma nova imagem pronta para divulgação.',
-
+                'O aplicativo tenta separar somente o produto, '
+                'remove textos como COMISSÃO EXTRA do nome '
+                'e cria uma nova imagem com o nome na faixa verde.',
                 textAlign:
                     TextAlign.center,
-
                 style:
                     TextStyle(
                   color:
