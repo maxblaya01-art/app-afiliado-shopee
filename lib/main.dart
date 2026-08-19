@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:image_background_remover/image_background_remover.dart';
 
 void main() {
   runApp(const ShopeeApp());
@@ -37,6 +38,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final ImagePicker _picker = ImagePicker();
+
   final TextEditingController _linkController =
       TextEditingController();
 
@@ -50,8 +52,28 @@ class _HomePageState extends State<HomePage> {
   bool _preparandoImagem = false;
 
   @override
+  void initState() {
+    super.initState();
+
+    _inicializarRemovedor();
+  }
+
+  Future<void> _inicializarRemovedor() async {
+    try {
+      await BackgroundRemover.instance.initializeOrt();
+    } catch (e) {
+      debugPrint(
+        'Erro ao inicializar removedor de fundo: $e',
+      );
+    }
+  }
+
+  @override
   void dispose() {
     _linkController.dispose();
+
+    BackgroundRemover.instance.dispose();
+
     super.dispose();
   }
 
@@ -61,7 +83,8 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _escolherPrint() async {
     try {
-      final XFile? arquivo = await _picker.pickImage(
+      final XFile? arquivo =
+          await _picker.pickImage(
         source: ImageSource.gallery,
         imageQuality: 100,
       );
@@ -78,7 +101,9 @@ class _HomePageState extends State<HomePage> {
         _textoLido = '';
       });
 
-      await _lerTextoDaImagem(arquivo.path);
+      await _lerTextoDaImagem(
+        arquivo.path,
+      );
     } catch (e) {
       if (!mounted) return;
 
@@ -96,8 +121,11 @@ class _HomePageState extends State<HomePage> {
   // OCR
   // ============================================================
 
-  Future<void> _lerTextoDaImagem(String caminho) async {
-    final TextRecognizer reconhecedor = TextRecognizer(
+  Future<void> _lerTextoDaImagem(
+    String caminho,
+  ) async {
+    final TextRecognizer reconhecedor =
+        TextRecognizer(
       script: TextRecognitionScript.latin,
     );
 
@@ -106,14 +134,21 @@ class _HomePageState extends State<HomePage> {
           InputImage.fromFilePath(caminho);
 
       final RecognizedText resultado =
-          await reconhecedor.processImage(imagem);
+          await reconhecedor.processImage(
+        imagem,
+      );
 
-      final String texto = resultado.text.trim();
+      final String texto =
+          resultado.text.trim();
 
       final List<String> linhas = texto
           .split('\n')
-          .map((linha) => linha.trim())
-          .where((linha) => linha.isNotEmpty)
+          .map(
+            (linha) => linha.trim(),
+          )
+          .where(
+            (linha) => linha.isNotEmpty,
+          )
           .toList();
 
       String nome = '';
@@ -123,7 +158,8 @@ class _HomePageState extends State<HomePage> {
       // ENCONTRAR PREÇO
       // ==========================================================
 
-      final RegExp regexPreco = RegExp(
+      final RegExp regexPreco =
+          RegExp(
         r'(?:R\$\s*)?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})',
         caseSensitive: false,
       );
@@ -133,7 +169,8 @@ class _HomePageState extends State<HomePage> {
             regexPreco.firstMatch(linha);
 
         if (match != null) {
-          preco = match.group(0) ?? '';
+          preco =
+              match.group(0) ?? '';
 
           if (preco.isNotEmpty) {
             break;
@@ -142,10 +179,11 @@ class _HomePageState extends State<HomePage> {
       }
 
       // ==========================================================
-      // ENCONTRAR NOME DO PRODUTO
+      // PALAVRAS QUE NÃO SÃO NOME DO PRODUTO
       // ==========================================================
 
-      final List<String> palavrasIgnoradas = [
+      final List<String>
+          palavrasIgnoradas = [
         'shopee',
         'comprar',
         'oferta',
@@ -162,7 +200,20 @@ class _HomePageState extends State<HomePage> {
         'compartilhar',
         'adicionar ao carrinho',
         'comprar agora',
+        'variações',
+        'variacoes',
+        'comissão',
+        'comissao',
+        'afiliados',
+        'mil+ vendido',
+        'mil vendido',
+        'comissão extra',
+        'comissao extra',
       ];
+
+      // ==========================================================
+      // ENCONTRAR NOME DO PRODUTO
+      // ==========================================================
 
       for (final String linha in linhas) {
         final String minuscula =
@@ -180,13 +231,14 @@ class _HomePageState extends State<HomePage> {
         if (!temPreco &&
             !ignorar &&
             linha.length >= 8 &&
-            linha.length <= 150) {
+            linha.length <= 180) {
           nome = linha;
           break;
         }
       }
 
-      if (nome.isEmpty && linhas.isNotEmpty) {
+      if (nome.isEmpty &&
+          linhas.isNotEmpty) {
         nome = linhas.first;
       }
 
@@ -218,7 +270,8 @@ class _HomePageState extends State<HomePage> {
   // ============================================================
 
   String _obterLink() {
-    String link = _linkController.text.trim();
+    String link =
+        _linkController.text.trim();
 
     if (link.isEmpty) {
       return '';
@@ -226,7 +279,8 @@ class _HomePageState extends State<HomePage> {
 
     if (!link.startsWith('http://') &&
         !link.startsWith('https://')) {
-      link = 'https://$link';
+      link =
+          'https://$link';
     }
 
     return link;
@@ -237,15 +291,18 @@ class _HomePageState extends State<HomePage> {
   // ============================================================
 
   String _gerarTextoDivulgacao() {
-    final String nome = _nomeProduto.isEmpty
-        ? 'Produto Shopee'
-        : _nomeProduto;
+    final String nome =
+        _nomeProduto.isEmpty
+            ? 'Produto Shopee'
+            : _nomeProduto;
 
-    final String preco = _preco.isEmpty
-        ? 'Confira o preço'
-        : _preco;
+    final String preco =
+        _preco.isEmpty
+            ? 'Confira o preço'
+            : _preco;
 
-    final String link = _obterLink();
+    final String link =
+        _obterLink();
 
     return '''
 🛍️ $nome
@@ -262,86 +319,384 @@ $link
   }
 
   // ============================================================
-  // PREPARAR IMAGEM
-  //
-  // Cria uma nova imagem:
-  //
-  // FOTO
-  // ─────────────────
-  // NOME DO PRODUTO
-  // ─────────────────
-  //
-  // A imagem original é recortada para tentar manter somente
-  // a região principal da foto do produto.
+  // RECORTAR A FOTO PRINCIPAL DO PRINT
   // ============================================================
 
-  Future<Uint8List?> _criarImagemDoProduto() async {
+  Future<ui.Image?>
+      _recortarFotoPrincipal(
+    Uint8List bytes,
+  ) async {
+    final ui.Codec codec =
+        await ui.instantiateImageCodec(
+      bytes,
+    );
+
+    final ui.FrameInfo frame =
+        await codec.getNextFrame();
+
+    final ui.Image original =
+        frame.image;
+
+    final int largura =
+        original.width;
+
+    final int altura =
+        original.height;
+
+    // Para o formato do seu print:
+    //
+    // esquerda = começa a foto principal
+    // topo = começo da foto
+    // direita = lado direito da foto
+    // baixo = termina antes das variações
+
+    int esquerda =
+        (largura * 0.30).round();
+
+    int topo =
+        (altura * 0.02).round();
+
+    int direita =
+        (largura * 0.96).round();
+
+    int baixo =
+        (altura * 0.32).round();
+
+    esquerda =
+        esquerda.clamp(
+      0,
+      largura - 1,
+    );
+
+    topo =
+        topo.clamp(
+      0,
+      altura - 1,
+    );
+
+    direita =
+        direita.clamp(
+      esquerda + 1,
+      largura,
+    );
+
+    baixo =
+        baixo.clamp(
+      topo + 1,
+      altura,
+    );
+
+    final int larguraCorte =
+        direita - esquerda;
+
+    final int alturaCorte =
+        baixo - topo;
+
+    final ui.PictureRecorder recorder =
+        ui.PictureRecorder();
+
+    final Canvas canvas =
+        Canvas(recorder);
+
+    final Rect origem =
+        Rect.fromLTWH(
+      esquerda.toDouble(),
+      topo.toDouble(),
+      larguraCorte.toDouble(),
+      alturaCorte.toDouble(),
+    );
+
+    final Rect destino =
+        Rect.fromLTWH(
+      0,
+      0,
+      larguraCorte.toDouble(),
+      alturaCorte.toDouble(),
+    );
+
+    canvas.drawImageRect(
+      original,
+      origem,
+      destino,
+      Paint()
+        ..filterQuality =
+            FilterQuality.high,
+    );
+
+    final ui.Picture picture =
+        recorder.endRecording();
+
+    final ui.Image recortada =
+        await picture.toImage(
+      larguraCorte,
+      alturaCorte,
+    );
+
+    return recortada;
+  }
+
+  // ============================================================
+  // CONVERTER UI.IMAGE PARA PNG
+  // ============================================================
+
+  Future<Uint8List?>
+      _imagemParaPng(
+    ui.Image imagem,
+  ) async {
+    final ByteData? dados =
+        await imagem.toByteData(
+      format:
+          ui.ImageByteFormat.png,
+    );
+
+    if (dados == null) {
+      return null;
+    }
+
+    return dados.buffer
+        .asUint8List();
+  }
+
+  // ============================================================
+  // ENCONTRAR LIMITES DO PRODUTO
+  //
+  // Depois de remover o fundo, procura somente a região
+  // realmente ocupada pelo produto.
+  // ============================================================
+
+  Future<ui.Image>
+      _recortarAreaTransparente(
+    ui.Image imagem,
+  ) async {
+    final ByteData? dados =
+        await imagem.toByteData(
+      format:
+          ui.ImageByteFormat.rawRgba,
+    );
+
+    if (dados == null) {
+      return imagem;
+    }
+
+    final Uint8List pixels =
+        dados.buffer.asUint8List();
+
+    final int largura =
+        imagem.width;
+
+    final int altura =
+        imagem.height;
+
+    int minX = largura;
+    int minY = altura;
+    int maxX = -1;
+    int maxY = -1;
+
+    for (int y = 0;
+        y < altura;
+        y++) {
+      for (int x = 0;
+          x < largura;
+          x++) {
+        final int indice =
+            (y * largura + x) * 4;
+
+        final int alpha =
+            pixels[indice + 3];
+
+        if (alpha > 20) {
+          if (x < minX) {
+            minX = x;
+          }
+
+          if (y < minY) {
+            minY = y;
+          }
+
+          if (x > maxX) {
+            maxX = x;
+          }
+
+          if (y > maxY) {
+            maxY = y;
+          }
+        }
+      }
+    }
+
+    if (maxX < 0 ||
+        maxY < 0) {
+      return imagem;
+    }
+
+    const int margem = 15;
+
+    minX =
+        (minX - margem)
+            .clamp(
+      0,
+      largura - 1,
+    );
+
+    minY =
+        (minY - margem)
+            .clamp(
+      0,
+      altura - 1,
+    );
+
+    maxX =
+        (maxX + margem)
+            .clamp(
+      0,
+      largura - 1,
+    );
+
+    maxY =
+        (maxY + margem)
+            .clamp(
+      0,
+      altura - 1,
+    );
+
+    final int larguraFinal =
+        maxX - minX + 1;
+
+    final int alturaFinal =
+        maxY - minY + 1;
+
+    final ui.PictureRecorder recorder =
+        ui.PictureRecorder();
+
+    final Canvas canvas =
+        Canvas(recorder);
+
+    final Rect origem =
+        Rect.fromLTWH(
+      minX.toDouble(),
+      minY.toDouble(),
+      larguraFinal.toDouble(),
+      alturaFinal.toDouble(),
+    );
+
+    final Rect destino =
+        Rect.fromLTWH(
+      0,
+      0,
+      larguraFinal.toDouble(),
+      alturaFinal.toDouble(),
+    );
+
+    canvas.drawImageRect(
+      imagem,
+      origem,
+      destino,
+      Paint()
+        ..filterQuality =
+            FilterQuality.high,
+    );
+
+    final ui.Picture picture =
+        recorder.endRecording();
+
+    return picture.toImage(
+      larguraFinal,
+      alturaFinal,
+    );
+  }
+
+  // ============================================================
+  // CRIAR IMAGEM FINAL
+  //
+  // 1. Recorta foto
+  // 2. Remove fundo
+  // 3. Coloca fundo branco
+  // 4. Coloca faixa verde
+  // 5. Coloca nome
+  // ============================================================
+
+  Future<Uint8List?>
+      _criarImagemDoProduto() async {
     if (_imagem == null) {
       return null;
     }
 
     try {
-      final Uint8List bytes =
+      final Uint8List originalBytes =
           await _imagem!.readAsBytes();
 
-      final ui.Codec codec =
-          await ui.instantiateImageCodec(bytes);
+      // ----------------------------------------------------------
+      // RECORTAR FOTO PRINCIPAL
+      // ----------------------------------------------------------
 
-      final ui.FrameInfo frame =
-          await codec.getNextFrame();
+      final ui.Image? fotoRecortada =
+          await _recortarFotoPrincipal(
+        originalBytes,
+      );
 
-      final ui.Image imagemOriginal =
-          frame.image;
+      if (fotoRecortada == null) {
+        return null;
+      }
+
+      final Uint8List? fotoPng =
+          await _imagemParaPng(
+        fotoRecortada,
+      );
+
+      if (fotoPng == null) {
+        return null;
+      }
+
+      // ----------------------------------------------------------
+      // REMOVER FUNDO
+      // ----------------------------------------------------------
+
+      final ui.Image produtoSemFundo =
+          await BackgroundRemover
+              .instance
+              .removeBg(
+        fotoPng,
+        threshold: 0.50,
+        smoothMask: true,
+        enhanceEdges: true,
+      );
+
+      // ----------------------------------------------------------
+      // CORTAR SOBRAS TRANSPARENTES
+      // ----------------------------------------------------------
+
+      final ui.Image produto =
+          await _recortarAreaTransparente(
+        produtoSemFundo,
+      );
+
+      // ----------------------------------------------------------
+      // TAMANHO DA IMAGEM FINAL
+      // ----------------------------------------------------------
 
       final int largura =
-          imagemOriginal.width;
+          produto.width;
 
-      final int altura =
-          imagemOriginal.height;
+      final double proporcao =
+          largura > 0
+              ? produto.height /
+                  largura
+              : 1.0;
 
-      // ----------------------------------------------------------
-      // Define uma área principal da imagem.
-      //
-      // Prints de lojas normalmente possuem a foto do produto
-      // na região superior/central.
-      // ----------------------------------------------------------
+      final int alturaProduto =
+          (largura * proporcao)
+              .round();
 
-      int esquerda =
-          (largura * 0.04).round();
+      const int alturaFaixa =
+          145;
 
-      int topo =
-          (altura * 0.08).round();
-
-      int direita =
-          (largura * 0.96).round();
-
-      int baixo =
-          (altura * 0.68).round();
-
-      // Segurança para evitar valores inválidos.
-
-      esquerda = esquerda.clamp(0, largura - 1);
-      topo = topo.clamp(0, altura - 1);
-      direita = direita.clamp(esquerda + 1, largura);
-      baixo = baixo.clamp(topo + 1, altura);
-
-      final int larguraCorte =
-          direita - esquerda;
-
-      final int alturaCorte =
-          baixo - topo;
+      final int alturaTotal =
+          alturaProduto +
+              alturaFaixa;
 
       // ----------------------------------------------------------
-      // Tamanho da faixa verde.
+      // CRIAR CANVAS
       // ----------------------------------------------------------
-
-      const double alturaFaixa = 115;
-
-      final int larguraFinal =
-          larguraCorte;
-
-      final int alturaImagemFinal =
-          alturaCorte + alturaFaixa.round();
 
       final ui.PictureRecorder recorder =
           ui.PictureRecorder();
@@ -349,43 +704,47 @@ $link
       final Canvas canvas =
           Canvas(recorder);
 
-      // Fundo branco.
+      // ----------------------------------------------------------
+      // FUNDO BRANCO
+      // ----------------------------------------------------------
 
-      final Paint fundo =
-          Paint()..color = Colors.white;
+      final Paint fundoBranco =
+          Paint()
+            ..color =
+                Colors.white;
 
       canvas.drawRect(
         Rect.fromLTWH(
           0,
           0,
-          larguraFinal.toDouble(),
-          alturaImagemFinal.toDouble(),
+          largura.toDouble(),
+          alturaTotal.toDouble(),
         ),
-        fundo,
+        fundoBranco,
       );
 
       // ----------------------------------------------------------
-      // Desenhar a foto do produto.
+      // PRODUTO
       // ----------------------------------------------------------
 
       final Rect origem =
           Rect.fromLTWH(
-        esquerda.toDouble(),
-        topo.toDouble(),
-        larguraCorte.toDouble(),
-        alturaCorte.toDouble(),
+        0,
+        0,
+        produto.width.toDouble(),
+        produto.height.toDouble(),
       );
 
       final Rect destino =
           Rect.fromLTWH(
         0,
         0,
-        larguraFinal.toDouble(),
-        alturaCorte.toDouble(),
+        largura.toDouble(),
+        alturaProduto.toDouble(),
       );
 
       canvas.drawImageRect(
-        imagemOriginal,
+        produto,
         origem,
         destino,
         Paint()
@@ -400,31 +759,29 @@ $link
       final Paint faixa =
           Paint()
             ..color =
-                const Color(0xFF087F3D);
+                const Color(0xFF075F3B);
 
       canvas.drawRect(
         Rect.fromLTWH(
           0,
-          alturaCorte.toDouble(),
-          larguraFinal.toDouble(),
-          alturaFaixa,
+          alturaProduto.toDouble(),
+          largura.toDouble(),
+          alturaFaixa.toDouble(),
         ),
         faixa,
       );
 
       // ----------------------------------------------------------
-      // NOME DO PRODUTO
+      // NOME
       // ----------------------------------------------------------
 
       String nome =
           _nomeProduto.trim();
 
       if (nome.isEmpty) {
-        nome = 'Produto Shopee';
+        nome =
+            'Produto Shopee';
       }
-
-      final double larguraTexto =
-          larguraFinal - 32;
 
       final TextPainter texto =
           TextPainter(
@@ -432,38 +789,42 @@ $link
           text: nome,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 25,
-            fontWeight: FontWeight.bold,
-            height: 1.15,
+            fontSize: 28,
+            fontWeight:
+                FontWeight.bold,
+            height: 1.12,
           ),
         ),
-        textAlign: TextAlign.center,
-        textDirection: TextDirection.ltr,
-        maxLines: 3,
+        textAlign:
+            TextAlign.center,
+        textDirection:
+            TextDirection.ltr,
+        maxLines: 4,
         ellipsis: '...',
       );
 
       texto.layout(
-        maxWidth: larguraTexto,
+        maxWidth:
+            largura - 36,
       );
 
-      final double posicaoX =
-          (larguraFinal - texto.width) / 2;
+      final double x =
+          (largura - texto.width) /
+              2;
 
-      final double posicaoY =
-          alturaCorte +
-              (alturaFaixa - texto.height) / 2;
+      final double y =
+          alturaProduto +
+              (alturaFaixa -
+                      texto.height) /
+                  2;
 
       texto.paint(
         canvas,
-        Offset(
-          posicaoX,
-          posicaoY,
-        ),
+        Offset(x, y),
       );
 
       // ----------------------------------------------------------
-      // FINALIZAR IMAGEM
+      // FINALIZAR
       // ----------------------------------------------------------
 
       final ui.Picture picture =
@@ -471,23 +832,16 @@ $link
 
       final ui.Image imagemFinal =
           await picture.toImage(
-        larguraFinal,
-        alturaImagemFinal,
+        largura,
+        alturaTotal,
       );
 
-      final ByteData? dados =
-          await imagemFinal.toByteData(
-        format: ui.ImageByteFormat.png,
+      return _imagemParaPng(
+        imagemFinal,
       );
-
-      if (dados == null) {
-        return null;
-      }
-
-      return dados.buffer.asUint8List();
     } catch (e) {
       debugPrint(
-        'Erro ao criar imagem: $e',
+        'Erro ao criar imagem final: $e',
       );
 
       return null;
@@ -499,7 +853,8 @@ $link
   // ============================================================
 
   Future<void> _compartilhar() async {
-    final String link = _obterLink();
+    final String link =
+        _obterLink();
 
     if (link.isEmpty) {
       _mostrarMensagem(
@@ -548,8 +903,10 @@ $link
           files: [
             XFile.fromData(
               imagemPronta,
-              name: 'produto_shopee.png',
-              mimeType: 'image/png',
+              name:
+                  'produto_shopee.png',
+              mimeType:
+                  'image/png',
             ),
           ],
         ),
@@ -574,7 +931,8 @@ $link
   // ============================================================
 
   Future<void> _copiarTexto() async {
-    final String link = _obterLink();
+    final String link =
+        _obterLink();
 
     if (link.isEmpty) {
       _mostrarMensagem(
@@ -612,10 +970,14 @@ $link
   // MENSAGEM
   // ============================================================
 
-  void _mostrarMensagem(String mensagem) {
-    ScaffoldMessenger.of(context).showSnackBar(
+  void _mostrarMensagem(
+    String mensagem,
+  ) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(
       SnackBar(
-        content: Text(mensagem),
+        content:
+            Text(mensagem),
         behavior:
             SnackBarBehavior.floating,
       ),
@@ -627,7 +989,9 @@ $link
   // ============================================================
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return Scaffold(
       backgroundColor:
           const Color(0xFFFFF8F5),
@@ -636,23 +1000,29 @@ $link
         title: const Text(
           'Divulgador Shopee',
           style: TextStyle(
-            fontWeight: FontWeight.bold,
+            fontWeight:
+                FontWeight.bold,
           ),
         ),
         centerTitle: true,
         backgroundColor:
             Colors.deepOrange,
-        foregroundColor: Colors.white,
+        foregroundColor:
+            Colors.white,
       ),
 
       body: SafeArea(
-        child: SingleChildScrollView(
+        child:
+            SingleChildScrollView(
           padding:
-              const EdgeInsets.all(18),
+              const EdgeInsets.all(
+            18,
+          ),
 
           child: Column(
             crossAxisAlignment:
-                CrossAxisAlignment.stretch,
+                CrossAxisAlignment
+                    .stretch,
 
             children: [
 
@@ -683,7 +1053,8 @@ $link
                   border:
                       OutlineInputBorder(
                     borderRadius:
-                        BorderRadius.circular(
+                        BorderRadius
+                            .circular(
                       18,
                     ),
                   ),
@@ -700,7 +1071,7 @@ $link
               ),
 
               // ==================================================
-              // BOTÃO PRINT
+              // BOTÃO FOTO
               // ==================================================
 
               ElevatedButton.icon(
@@ -727,14 +1098,16 @@ $link
                 style:
                     ElevatedButton.styleFrom(
                   padding:
-                      const EdgeInsets.symmetric(
+                      const EdgeInsets
+                          .symmetric(
                     vertical: 18,
                   ),
 
                   shape:
                       RoundedRectangleBorder(
                     borderRadius:
-                        BorderRadius.circular(
+                        BorderRadius
+                            .circular(
                       18,
                     ),
                   ),
@@ -746,14 +1119,17 @@ $link
               ),
 
               // ==================================================
-              // CARREGANDO
+              // CARREGANDO OCR
               // ==================================================
 
               if (_carregando)
                 const Card(
-                  child: Padding(
+                  child:
+                      Padding(
                     padding:
-                        EdgeInsets.all(20),
+                        EdgeInsets.all(
+                      20,
+                    ),
 
                     child: Column(
                       children: [
@@ -767,7 +1143,8 @@ $link
                         Text(
                           'Lendo o nome e o preço do produto...',
                           textAlign:
-                              TextAlign.center,
+                              TextAlign
+                                  .center,
                         ),
                       ],
                     ),
@@ -775,7 +1152,7 @@ $link
                 ),
 
               // ==================================================
-              // FOTO DO PRODUTO
+              // FOTO ORIGINAL
               // ==================================================
 
               if (_imagem != null &&
@@ -784,20 +1161,26 @@ $link
                   clipBehavior:
                       Clip.antiAlias,
 
-                  child: Column(
+                  child:
+                      Column(
                     children: [
 
                       const Padding(
                         padding:
-                            EdgeInsets.all(12),
+                            EdgeInsets
+                                .all(
+                          12,
+                        ),
 
-                        child: Row(
+                        child:
+                            Row(
                           children: [
 
                             Icon(
                               Icons.image,
                               color:
-                                  Colors.deepOrange,
+                                  Colors
+                                      .deepOrange,
                             ),
 
                             SizedBox(
@@ -809,7 +1192,8 @@ $link
                               style:
                                   TextStyle(
                                 fontWeight:
-                                    FontWeight.bold,
+                                    FontWeight
+                                        .bold,
                               ),
                             ),
                           ],
@@ -833,36 +1217,45 @@ $link
               ),
 
               // ==================================================
-              // RESULTADO
+              // INFORMAÇÕES
               // ==================================================
 
               if (!_carregando &&
                   (_nomeProduto
                           .isNotEmpty ||
-                      _preco.isNotEmpty))
+                      _preco
+                          .isNotEmpty))
                 Card(
                   elevation: 2,
 
-                  child: Padding(
+                  child:
+                      Padding(
                     padding:
-                        const EdgeInsets.all(
+                        const EdgeInsets
+                            .all(
                       18,
                     ),
 
-                    child: Column(
+                    child:
+                        Column(
                       crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                          CrossAxisAlignment
+                              .start,
 
                       children: [
 
                         const Text(
                           'INFORMAÇÕES ENCONTRADAS',
-                          style: TextStyle(
-                            fontSize: 14,
+                          style:
+                              TextStyle(
+                            fontSize:
+                                14,
                             fontWeight:
-                                FontWeight.bold,
+                                FontWeight
+                                    .bold,
                             color:
-                                Colors.grey,
+                                Colors
+                                    .grey,
                           ),
                         ),
 
@@ -872,11 +1265,14 @@ $link
 
                         const Text(
                           'NOME DO PRODUTO',
-                          style: TextStyle(
+                          style:
+                              TextStyle(
                             color:
-                                Colors.grey,
+                                Colors
+                                    .grey,
                             fontWeight:
-                                FontWeight.bold,
+                                FontWeight
+                                    .bold,
                           ),
                         ),
 
@@ -892,9 +1288,11 @@ $link
 
                           style:
                               const TextStyle(
-                            fontSize: 20,
+                            fontSize:
+                                20,
                             fontWeight:
-                                FontWeight.bold,
+                                FontWeight
+                                    .bold,
                           ),
                         ),
 
@@ -904,11 +1302,14 @@ $link
 
                         const Text(
                           'PREÇO',
-                          style: TextStyle(
+                          style:
+                              TextStyle(
                             color:
-                                Colors.grey,
+                                Colors
+                                    .grey,
                             fontWeight:
-                                FontWeight.bold,
+                                FontWeight
+                                    .bold,
                           ),
                         ),
 
@@ -917,17 +1318,21 @@ $link
                         ),
 
                         Text(
-                          _preco.isEmpty
+                          _preco
+                                  .isEmpty
                               ? 'Não identificado'
                               : _preco,
 
                           style:
                               const TextStyle(
-                            fontSize: 22,
+                            fontSize:
+                                22,
                             fontWeight:
-                                FontWeight.bold,
+                                FontWeight
+                                    .bold,
                             color:
-                                Colors.deepOrange,
+                                Colors
+                                    .deepOrange,
                           ),
                         ),
                       ],
@@ -936,7 +1341,7 @@ $link
                 ),
 
               // ==================================================
-              // TEXTO DETECTADO
+              // TEXTO OCR
               // ==================================================
 
               if (_textoLido
@@ -951,7 +1356,8 @@ $link
 
                     Padding(
                       padding:
-                          const EdgeInsets.all(
+                          const EdgeInsets
+                              .all(
                         16,
                       ),
 
@@ -968,12 +1374,13 @@ $link
               ),
 
               // ==================================================
-              // COMPARTILHAR FOTO + TEXTO
+              // COMPARTILHAR
               // ==================================================
 
               if (_nomeProduto
                       .isNotEmpty ||
-                  _preco.isNotEmpty)
+                  _preco
+                      .isNotEmpty)
                 ElevatedButton.icon(
                   onPressed:
                       _preparandoImagem
@@ -987,45 +1394,55 @@ $link
                               height: 20,
                               child:
                                   CircularProgressIndicator(
-                                strokeWidth: 2,
+                                strokeWidth:
+                                    2,
                                 color:
-                                    Colors.white,
+                                    Colors
+                                        .white,
                               ),
                             )
                           : const Icon(
-                              Icons.image,
+                              Icons
+                                  .share,
                             ),
 
                   label:
                       Text(
                     _preparandoImagem
-                        ? 'PREPARANDO IMAGEM...'
+                        ? 'PREPARANDO PRODUTO...'
                         : 'COMPARTILHAR FOTO + DIVULGAÇÃO',
+
                     style:
                         const TextStyle(
-                      fontSize: 16,
+                      fontSize:
+                          16,
                       fontWeight:
-                          FontWeight.bold,
+                          FontWeight
+                              .bold,
                     ),
                   ),
 
                   style:
-                      ElevatedButton.styleFrom(
+                      ElevatedButton
+                          .styleFrom(
                     backgroundColor:
-                        Colors.deepOrange,
+                        Colors
+                            .deepOrange,
 
                     foregroundColor:
                         Colors.white,
 
                     padding:
-                        const EdgeInsets.symmetric(
+                        const EdgeInsets
+                            .symmetric(
                       vertical: 18,
                     ),
 
                     shape:
                         RoundedRectangleBorder(
                       borderRadius:
-                          BorderRadius.circular(
+                          BorderRadius
+                              .circular(
                         18,
                       ),
                     ),
@@ -1037,12 +1454,13 @@ $link
               ),
 
               // ==================================================
-              // COMPARTILHAR SOMENTE TEXTO
+              // TEXTO
               // ==================================================
 
               if (_nomeProduto
                       .isNotEmpty ||
-                  _preco.isNotEmpty)
+                  _preco
+                      .isNotEmpty)
                 OutlinedButton.icon(
                   onPressed:
                       _copiarTexto,
@@ -1058,16 +1476,19 @@ $link
                   ),
 
                   style:
-                      OutlinedButton.styleFrom(
+                      OutlinedButton
+                          .styleFrom(
                     padding:
-                        const EdgeInsets.symmetric(
+                        const EdgeInsets
+                            .symmetric(
                       vertical: 15,
                     ),
 
                     shape:
                         RoundedRectangleBorder(
                       borderRadius:
-                          BorderRadius.circular(
+                          BorderRadius
+                              .circular(
                         18,
                       ),
                     ),
@@ -1098,16 +1519,19 @@ $link
                   ),
 
                   style:
-                      OutlinedButton.styleFrom(
+                      OutlinedButton
+                          .styleFrom(
                     padding:
-                        const EdgeInsets.symmetric(
+                        const EdgeInsets
+                            .symmetric(
                       vertical: 15,
                     ),
 
                     shape:
                         RoundedRectangleBorder(
                       borderRadius:
-                          BorderRadius.circular(
+                          BorderRadius
+                              .circular(
                         18,
                       ),
                     ),
@@ -1119,16 +1543,18 @@ $link
               ),
 
               const Text(
-                'O aplicativo lê o nome e o preço visíveis no print '
-                'e prepara uma imagem do produto com o nome em uma faixa verde.',
+                'O aplicativo identifica o produto, remove o fundo '
+                'da imagem e prepara uma divulgação pronta para compartilhar.',
 
                 textAlign:
                     TextAlign.center,
 
-                style: TextStyle(
+                style:
+                    TextStyle(
                   color:
                       Colors.grey,
-                  fontSize: 13,
+                  fontSize:
+                      13,
                 ),
               ),
             ],
