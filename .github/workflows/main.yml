@@ -18,41 +18,147 @@ jobs:
       - name: Configurar Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.35.0'
+          flutter-version: "3.39.0"
           channel: stable
           cache: true
 
       - name: Criar estrutura Android
         run: |
-          flutter create --platforms=android .
+          flutter create --platforms=android --project-name app_afiliado_shopee .
+
+      - name: Corrigir image_picker
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("pubspec.yaml")
+          s = p.read_text()
+
+          s = s.replace("image_picker: ^1.2.3", "image_picker: ^1.2.2")
+          s = s.replace("image_picker: 1.2.3", "image_picker: 1.2.2")
+
+          p.write_text(s)
+          PY
+
+      - name: Corrigir R8 e Gradle
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # Procura o arquivo correto do Android.
+          kts = Path("android/app/build.gradle.kts")
+          groovy = Path("android/app/build.gradle")
+
+          if kts.exists():
+              p = kts
+              s = p.read_text()
+
+              # Desativa minificação e redução de recursos.
+              s = s.replace(
+                  "isMinifyEnabled = true",
+                  "isMinifyEnabled = false"
+              )
+
+              s = s.replace(
+                  "isShrinkResources = true",
+                  "isShrinkResources = false"
+              )
+
+              # Caso não exista nenhuma configuração de minificação,
+              # cria uma configuração de release.
+              if "isMinifyEnabled" not in s:
+                  marker = "buildTypes {"
+                  if marker in s:
+                      s = s.replace(
+                          marker,
+                          """buildTypes {
+          release {
+              isMinifyEnabled = false
+              isShrinkResources = false
+          }
+          """,
+                          1
+                      )
+
+              p.write_text(s)
+
+          elif groovy.exists():
+              p = groovy
+              s = p.read_text()
+
+              s = s.replace(
+                  "minifyEnabled true",
+                  "minifyEnabled false"
+              )
+
+              s = s.replace(
+                  "shrinkResources true",
+                  "shrinkResources false"
+              )
+
+              if "minifyEnabled" not in s:
+                  marker = "buildTypes {"
+                  if marker in s:
+                      s = s.replace(
+                          marker,
+                          """buildTypes {
+          release {
+              minifyEnabled false
+              shrinkResources false
+          }
+          """,
+                          1
+                      )
+
+              p.write_text(s)
+
+          else:
+              raise SystemExit(
+                  "ERRO: android/app/build.gradle.kts e android/app/build.gradle não encontrados."
+              )
+
+          print("R8/minificação configurado corretamente.")
+          PY
+
+      - name: Criar regras ProGuard
+        run: |
+          cat > android/app/proguard-rules.pro <<'EOF'
+          # Google ML Kit
+          -dontwarn com.google.mlkit.**
+          -keep class com.google.mlkit.** { *; }
+
+          # Text Recognition
+          -dontwarn com.google.mlkit.vision.text.**
+          -keep class com.google.mlkit.vision.text.** { *; }
+
+          # Image Picker
+          -dontwarn io.flutter.plugins.imagepicker.**
+          -keep class io.flutter.plugins.imagepicker.** { *; }
+          EOF
 
       - name: Instalar dependências
-        run: |
-          flutter pub get
-
-      - name: Desativar R8
-        run: |
-          if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/isMinifyEnabled = true/isMinifyEnabled = false/g' android/app/build.gradle.kts
-            sed -i 's/isShrinkResources = true/isShrinkResources = false/g' android/app/build.gradle.kts
-          fi
-
-          if [ -f android/app/build.gradle ]; then
-            sed -i 's/minifyEnabled true/minifyEnabled false/g' android/app/build.gradle
-            sed -i 's/shrinkResources true/shrinkResources false/g' android/app/build.gradle
-          fi
-
-      - name: Limpar projeto
         run: |
           flutter clean
           flutter pub get
 
+      - name: Verificar Flutter
+        run: |
+          flutter --version
+          flutter pub deps
+
       - name: Compilar APK
         run: |
-          flutter build apk --release --no-shrink
+          flutter build apk --release --no-tree-shake-icons
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: aplicativo-shopee
+          name: app-afiliado-shopee-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      - name: Finalizado
+        run: |
+          echo "===================================="
+          echo "APK GERADO COM SUCESSO!"
+          echo "===================================="
