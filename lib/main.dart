@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:html/parser.dart' as parser;
 
 void main() {
   runApp(const DivulgadorShopeeApp());
@@ -20,7 +22,7 @@ class DivulgadorShopeeApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.deepOrange,
         ),
-        scaffoldBackgroundColor: const Color(0xFFFFF8F6),
+        scaffoldBackgroundColor: const Color(0xFFFFF8F5),
       ),
       home: const HomePage(),
     );
@@ -41,432 +43,34 @@ class _HomePageState extends State<HomePage> {
   String preco = '';
   String imagem = '';
   String linkFinal = '';
-  String erro = '';
 
   bool carregando = false;
-
-  @override
-  void dispose() {
-    linkController.dispose();
-    super.dispose();
-  }
-
-  // ============================================================
-  // NORMALIZA O LINK DA SHOPEE
-  // ============================================================
-
-  String normalizarLink(String texto) {
-    String link = texto.trim();
-
-    // Corrige casos em que o usuário cola "s://..."
-    if (link.startsWith('s://')) {
-      link = 'https://' + link.substring(4);
-    }
-
-    // Corrige "//s.shopee.com.br/..."
-    if (link.startsWith('//')) {
-      link = 'https:$link';
-    }
-
-    // Adiciona HTTPS se necessário
-    if (!link.startsWith('http://') &&
-        !link.startsWith('https://')) {
-      link = 'https://$link';
-    }
-
-    return link;
-  }
-
-  bool ehShopee(String link) {
-    final texto = link.toLowerCase();
-
-    return texto.contains('shopee.com.br') ||
-        texto.contains('shopee.com') ||
-        texto.contains('s.shopee');
-  }
-
-  // ============================================================
-  // LIMPA TEXTO HTML
-  // ============================================================
-
-  String limparTexto(String texto) {
-    String resultado = texto;
-
-    resultado = resultado.replaceAll(
-      RegExp(r'<[^>]*>'),
-      ' ',
-    );
-
-    resultado = resultado.replaceAll('&amp;', '&');
-    resultado = resultado.replaceAll('&quot;', '"');
-    resultado = resultado.replaceAll('&#39;', "'");
-    resultado = resultado.replaceAll('&apos;', "'");
-    resultado = resultado.replaceAll('&lt;', '<');
-    resultado = resultado.replaceAll('&gt;', '>');
-    resultado = resultado.replaceAll('&nbsp;', ' ');
-
-    resultado = resultado.replaceAll(
-      RegExp(r'\s+'),
-      ' ',
-    );
-
-    return resultado.trim();
-  }
-
-  // ============================================================
-  // EXTRAI META TAG
-  // ============================================================
-
-  String extrairMeta(
-    String html,
-    String propriedade,
-  ) {
-    final padrao1 = RegExp(
-      '<meta[^>]+property=["\']$propriedade["\'][^>]+content=["\']([^"\']+)["\']',
-      caseSensitive: false,
-    );
-
-    final padrao2 = RegExp(
-      '<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']$propriedade["\']',
-      caseSensitive: false,
-    );
-
-    Match? match = padrao1.firstMatch(html);
-
-    match ??= padrao2.firstMatch(html);
-
-    if (match != null) {
-      return limparTexto(match.group(1) ?? '');
-    }
-
-    return '';
-  }
-
-  // ============================================================
-  // EXTRAI META NAME
-  // ============================================================
-
-  String extrairMetaName(
-    String html,
-    String nome,
-  ) {
-    final padrao1 = RegExp(
-      '<meta[^>]+name=["\']$nome["\'][^>]+content=["\']([^"\']+)["\']',
-      caseSensitive: false,
-    );
-
-    final padrao2 = RegExp(
-      '<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']$nome["\']',
-      caseSensitive: false,
-    );
-
-    Match? match = padrao1.firstMatch(html);
-
-    match ??= padrao2.firstMatch(html);
-
-    if (match != null) {
-      return limparTexto(match.group(1) ?? '');
-    }
-
-    return '';
-  }
-
-  // ============================================================
-  // EXTRAI TÍTULO
-  // ============================================================
-
-  String extrairTitulo(String html) {
-    String titulo = extrairMeta(html, 'og:title');
-
-    if (titulo.isNotEmpty) {
-      return titulo;
-    }
-
-    titulo = extrairMetaName(html, 'twitter:title');
-
-    if (titulo.isNotEmpty) {
-      return titulo;
-    }
-
-    final match = RegExp(
-      r'<title[^>]*>(.*?)</title>',
-      caseSensitive: false,
-      dotAll: true,
-    ).firstMatch(html);
-
-    if (match != null) {
-      return limparTexto(match.group(1) ?? '');
-    }
-
-    return '';
-  }
-
-  // ============================================================
-  // EXTRAI IMAGEM
-  // ============================================================
-
-  String extrairImagem(String html) {
-    String imagem = extrairMeta(html, 'og:image');
-
-    if (imagem.isNotEmpty) {
-      return imagem;
-    }
-
-    imagem = extrairMetaName(html, 'twitter:image');
-
-    if (imagem.isNotEmpty) {
-      return imagem;
-    }
-
-    // Tenta encontrar uma imagem em Markdown
-    final markdown = RegExp(
-      r'!\[[^\]]*\]\((https?://[^)\s]+)',
-      caseSensitive: false,
-    ).firstMatch(html);
-
-    if (markdown != null) {
-      return markdown.group(1) ?? '';
-    }
-
-    // Tenta encontrar qualquer imagem
-    final imagemGenerica = RegExp(
-      r'https?://[^\s"\']+\.(?:jpg|jpeg|png|webp)',
-      caseSensitive: false,
-    ).firstMatch(html);
-
-    if (imagemGenerica != null) {
-      return imagemGenerica.group(0) ?? '';
-    }
-
-    return '';
-  }
-
-  // ============================================================
-  // EXTRAI PREÇO
-  // ============================================================
-
-  String extrairPreco(String texto) {
-    final padroes = <RegExp>[
-      RegExp(
-        r'R\$\s*\d{1,3}(?:\.\d{3})*(?:,\d{2})?',
-        caseSensitive: false,
-      ),
-      RegExp(
-        r'BRL\s*\d{1,3}(?:\.\d{3})*(?:,\d{2})?',
-        caseSensitive: false,
-      ),
-    ];
-
-    for (final padrao in padroes) {
-      final match = padrao.firstMatch(texto);
-
-      if (match != null) {
-        return match.group(0) ?? '';
-      }
-    }
-
-    return '';
-  }
-
-  // ============================================================
-  // BUSCA DIRETAMENTE NA SHOPEE
-  // ============================================================
-
-  Future<Map<String, String>?> buscarDireto(
-    String link,
-  ) async {
-    try {
-      final client = http.Client();
-
-      try {
-        final uri = Uri.parse(link);
-
-        final resposta = await client
-            .get(
-              uri,
-              headers: {
-                'User-Agent':
-                    'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36',
-                'Accept':
-                    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'Accept-Language':
-                    'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Cache-Control': 'no-cache',
-              },
-            )
-            .timeout(
-              const Duration(seconds: 20),
-            );
-
-        final html = utf8.decode(
-          resposta.bodyBytes,
-          allowMalformed: true,
-        );
-
-        if (resposta.statusCode >= 200 &&
-            resposta.statusCode < 400 &&
-            html.isNotEmpty) {
-          final titulo = extrairTitulo(html);
-          final imagem = extrairImagem(html);
-          final texto = limparTexto(html);
-          final precoEncontrado = extrairPreco(texto);
-
-          final urlFinal =
-              resposta.request?.url.toString() ?? link;
-
-          if (titulo.isNotEmpty ||
-              imagem.isNotEmpty ||
-              precoEncontrado.isNotEmpty) {
-            return {
-              'produto': titulo.isNotEmpty
-                  ? titulo
-                  : 'Produto Shopee',
-              'preco': precoEncontrado.isNotEmpty
-                  ? precoEncontrado
-                  : 'Preço não encontrado',
-              'imagem': imagem,
-              'link': urlFinal,
-            };
-          }
-        }
-      } finally {
-        client.close();
-      }
-    } catch (_) {
-      // Continua para o método alternativo.
-    }
-
-    return null;
-  }
-
-  // ============================================================
-  // MÉTODO ALTERNATIVO
-  // ============================================================
-
-  Future<Map<String, String>?> buscarAlternativo(
-    String link,
-  ) async {
-    try {
-      final url =
-          'https://r.jina.ai/$link';
-
-      final resposta = await http.get(
-        Uri.parse(url),
-        headers: {
-          'User-Agent':
-              'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36',
-          'Accept': 'text/plain,text/html,*/*',
-        },
-      ).timeout(
-        const Duration(seconds: 30),
-      );
-
-      if (resposta.statusCode >= 200 &&
-          resposta.statusCode < 400) {
-        final texto = utf8.decode(
-          resposta.bodyBytes,
-          allowMalformed: true,
-        );
-
-        if (texto.trim().isEmpty) {
-          return null;
-        }
-
-        String titulo = '';
-
-        // Título em Markdown
-        final tituloMarkdown = RegExp(
-          r'^#\s+(.+)$',
-          multiLine: true,
-        ).firstMatch(texto);
-
-        if (tituloMarkdown != null) {
-          titulo =
-              limparTexto(tituloMarkdown.group(1) ?? '');
-        }
-
-        // Tenta procurar "Title:"
-        if (titulo.isEmpty) {
-          final titleMatch = RegExp(
-            r'(?:Title|Título)\s*:\s*(.+)',
-            caseSensitive: false,
-          ).firstMatch(texto);
-
-          if (titleMatch != null) {
-            titulo =
-                limparTexto(titleMatch.group(1) ?? '');
-          }
-        }
-
-        final precoEncontrado = extrairPreco(texto);
-
-        String imagem = '';
-
-        final imagemMatch = RegExp(
-          r'!\[[^\]]*\]\((https?://[^)\s]+)',
-          caseSensitive: false,
-        ).firstMatch(texto);
-
-        if (imagemMatch != null) {
-          imagem = imagemMatch.group(1) ?? '';
-        }
-
-        // Procura URL de imagem
-        if (imagem.isEmpty) {
-          final imagemGenerica = RegExp(
-            r'https?://[^\s\]\)"]+\.(?:jpg|jpeg|png|webp)',
-            caseSensitive: false,
-          ).firstMatch(texto);
-
-          if (imagemGenerica != null) {
-            imagem =
-                imagemGenerica.group(0) ?? '';
-          }
-        }
-
-        if (titulo.isNotEmpty ||
-            precoEncontrado.isNotEmpty ||
-            imagem.isNotEmpty) {
-          return {
-            'produto': titulo.isNotEmpty
-                ? titulo
-                : 'Produto Shopee',
-            'preco': precoEncontrado.isNotEmpty
-                ? precoEncontrado
-                : 'Preço não encontrado',
-            'imagem': imagem,
-            'link': link,
-          };
-        }
-      }
-    } catch (_) {
-      // Falha no método alternativo.
-    }
-
-    return null;
-  }
-
-  // ============================================================
-  // BUSCAR PRODUTO
-  // ============================================================
+  String erro = '';
 
   Future<void> buscarProduto() async {
-    FocusScope.of(context).unfocus();
+    final link = linkController.text.trim();
 
-    final texto = linkController.text.trim();
-
-    if (texto.isEmpty) {
+    if (link.isEmpty) {
       setState(() {
         erro = 'Cole o link do produto da Shopee.';
       });
       return;
     }
 
-    final link = normalizarLink(texto);
+    String urlTexto = link;
 
-    if (!ehShopee(link)) {
+    if (!urlTexto.startsWith('http://') &&
+        !urlTexto.startsWith('https://')) {
+      urlTexto = 'https://$urlTexto';
+    }
+
+    Uri? uri;
+
+    try {
+      uri = Uri.parse(urlTexto);
+    } catch (_) {
       setState(() {
-        erro = 'Esse link não parece ser um link da Shopee.';
+        erro = 'O link informado não é válido.';
       });
       return;
     }
@@ -480,98 +84,145 @@ class _HomePageState extends State<HomePage> {
       linkFinal = '';
     });
 
-    Map<String, String>? dados;
+    try {
+      final resposta = await http.get(
+        uri,
+        headers: {
+          'User-Agent':
+              'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+              '(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+          'Accept':
+              'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+        },
+      ).timeout(const Duration(seconds: 20));
 
-    // Primeiro tenta diretamente
-    dados = await buscarDireto(link);
+      if (resposta.statusCode < 200 || resposta.statusCode >= 400) {
+        throw Exception(
+          'A Shopee respondeu com código ${resposta.statusCode}.',
+        );
+      }
 
-    // Se não conseguir, tenta método alternativo
-    if (dados == null) {
-      dados = await buscarAlternativo(link);
-    }
+      final html = utf8.decode(resposta.bodyBytes);
+      final document = parser.parse(html);
 
-    if (!mounted) {
-      return;
-    }
+      String pegarMeta(String nome) {
+        final elemento = document.querySelector(
+          'meta[property="$nome"], meta[name="$nome"]',
+        );
 
-    if (dados != null) {
+        return elemento?.attributes['content']?.trim() ?? '';
+      }
+
+      String titulo = pegarMeta('og:title');
+
+      if (titulo.isEmpty) {
+        titulo = pegarMeta('twitter:title');
+      }
+
+      if (titulo.isEmpty) {
+        titulo = document.querySelector('title')?.text.trim() ?? '';
+      }
+
+      String foto = pegarMeta('og:image');
+
+      if (foto.isEmpty) {
+        foto = pegarMeta('twitter:image');
+      }
+
+      String descricao = pegarMeta('og:description');
+
+      String precoEncontrado = '';
+
+      final textos = <String>[
+        titulo,
+        descricao,
+        document.body?.text ?? '',
+      ];
+
+      final textoCompleto = textos.join(' ');
+
+      final precoRegex = RegExp(
+        r'(?:R\$|BRL)\s?\d{1,3}(?:\.\d{3})*(?:,\d{2})?',
+        caseSensitive: false,
+      );
+
+      final resultadoPreco = precoRegex.firstMatch(textoCompleto);
+
+      if (resultadoPreco != null) {
+        precoEncontrado = resultadoPreco.group(0) ?? '';
+      }
+
+      if (titulo.isEmpty) {
+        titulo = 'Produto Shopee';
+      }
+
+      if (foto.isEmpty) {
+        foto = '';
+      }
+
       setState(() {
-        produto =
-            dados!['produto'] ?? 'Produto Shopee';
-
-        preco =
-            dados['preco'] ?? 'Preço não encontrado';
-
-        imagem =
-            dados['imagem'] ?? '';
-
-        linkFinal =
-            dados['link'] ?? link;
-
-        erro = '';
+        produto = titulo;
+        preco = precoEncontrado.isEmpty
+            ? 'Preço não encontrado'
+            : precoEncontrado;
+        imagem = foto;
+        linkFinal = resposta.request?.url.toString() ?? urlTexto;
         carregando = false;
       });
-    } else {
+    } catch (e) {
       setState(() {
         carregando = false;
-
         erro =
-            'Não foi possível carregar os dados deste produto. '
-            'A Shopee pode ter bloqueado o acesso automático ao link.';
+            'Não foi possível carregar o produto automaticamente.\n\n'
+            'A Shopee pode estar bloqueando o acesso automático ao produto. '
+            'Tente novamente ou abra o link no navegador.';
       });
     }
   }
 
-  // ============================================================
-  // GERAR TEXTO DE DIVULGAÇÃO
-  // ============================================================
+  String gerarTexto() {
+    final nome = produto.isEmpty ? 'Produto Shopee' : produto;
 
-  String gerarTextoDivulgacao() {
-    final nome = produto.isNotEmpty
-        ? produto
-        : 'Produto Shopee';
+    final valor = preco.isEmpty ? 'Consulte o preço' : preco;
 
-    final valor = preco.isNotEmpty
-        ? preco
-        : 'Confira o preço';
-
-    final link = linkFinal.isNotEmpty
-        ? linkFinal
-        : linkController.text.trim();
+    final link = linkFinal.isEmpty
+        ? linkController.text.trim()
+        : linkFinal;
 
     return '''
+🔥 OFERTA SHOPEE 🔥
+
 🛍️ $nome
 
-💰 Preço: $valor
+💰 $valor
 
-🔥 Aproveite a oferta!
-
-👉 Compre aqui:
+👉 COMPRE AQUI:
 $link
+
+⚡ Aproveite enquanto estiver disponível!
 ''';
   }
 
   Future<void> copiarDivulgacao() async {
-    final texto = gerarTextoDivulgacao();
-
     await Clipboard.setData(
-      ClipboardData(text: texto),
+      ClipboardData(text: gerarTexto()),
     );
 
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text(
-          'Divulgação copiada! Agora é só colar no WhatsApp.',
-        ),
+        content: Text('Divulgação copiada!'),
       ),
     );
   }
 
-  // ============================================================
-  // INTERFACE
-  // ============================================================
+  @override
+  void dispose() {
+    linkController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -586,384 +237,217 @@ $link
         ),
         centerTitle: true,
         backgroundColor: Colors.deepOrange,
-        foregroundColor: Colors.white,
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 10),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          children: [
+            const SizedBox(height: 15),
 
-              // ==================================================
-              // CAMPO DO LINK
-              // ==================================================
-
-              TextField(
-                controller: linkController,
-                keyboardType: TextInputType.url,
-                decoration: InputDecoration(
-                  labelText:
-                      'Link do produto Shopee',
-                  prefixIcon:
-                      const Icon(Icons.link),
-                  hintText:
-                      'https://s.shopee.com.br/...',
-                  border: OutlineInputBorder(
-                    borderRadius:
-                        BorderRadius.circular(20),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
+            TextField(
+              controller: linkController,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                labelText: 'Link do produto Shopee',
+                hintText: 'https://s.shopee.com.br/...',
+                prefixIcon: const Icon(Icons.link),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
                 ),
               ),
+            ),
 
-              const SizedBox(height: 18),
+            const SizedBox(height: 18),
 
-              // ==================================================
-              // BOTÃO BUSCAR
-              // ==================================================
-
-              SizedBox(
-                height: 58,
-                child: ElevatedButton.icon(
-                  onPressed:
-                      carregando
-                          ? null
-                          : buscarProduto,
-                  icon: carregando
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child:
-                              CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.search,
+            SizedBox(
+              width: double.infinity,
+              height: 58,
+              child: ElevatedButton.icon(
+                onPressed: carregando ? null : buscarProduto,
+                icon: carregando
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
                         ),
-                  label: Text(
-                    carregando
-                        ? 'CARREGANDO...'
-                        : 'BUSCAR PRODUTO',
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight:
-                          FontWeight.bold,
-                    ),
-                  ),
-                  style:
-                      ElevatedButton.styleFrom(
-                    shape:
-                        RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(
-                        30,
-                      ),
-                    ),
+                      )
+                    : const Icon(Icons.search),
+                label: Text(
+                  carregando
+                      ? 'CARREGANDO...'
+                      : 'BUSCAR PRODUTO',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
+            ),
 
-              const SizedBox(height: 25),
+            const SizedBox(height: 20),
 
-              // ==================================================
-              // ERRO
-              // ==================================================
-
-              if (erro.isNotEmpty)
-                Container(
-                  padding:
-                      const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: Colors.orange
-                        .withOpacity(0.10),
-                    borderRadius:
-                        BorderRadius.circular(18),
-                    border: Border.all(
-                      color: Colors.orange
-                          .withOpacity(0.40),
-                    ),
-                  ),
-                  child: Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.warning_amber,
-                        color: Colors.deepOrange,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          erro,
-                          style:
-                              const TextStyle(
-                            fontSize: 16,
-                            color:
-                                Colors.deepOrange,
-                          ),
-                        ),
-                      ),
-                    ],
+            if (erro.isNotEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: Colors.orange.shade300,
                   ),
                 ),
-
-              // ==================================================
-              // PRODUTO
-              // ==================================================
-
-              if (produto.isNotEmpty ||
-                  imagem.isNotEmpty)
-                const SizedBox(height: 20),
-
-              if (produto.isNotEmpty ||
-                  imagem.isNotEmpty)
-                Card(
-                  elevation: 3,
-                  shape:
-                      RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(20),
-                  ),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
-                      children: [
-                        // IMAGEM
-                        if (imagem.isNotEmpty)
-                          ClipRRect(
-                            borderRadius:
-                                BorderRadius
-                                    .circular(15),
-                            child:
-                                Image.network(
-                              imagem,
-                              width:
-                                  double.infinity,
-                              height: 260,
-                              fit: BoxFit.contain,
-                              errorBuilder:
-                                  (
-                                context,
-                                error,
-                                stackTrace,
-                              ) {
-                                return Container(
-                                  height: 260,
-                                  color:
-                                      Colors.grey[
-                                          200],
-                                  child:
-                                      const Icon(
-                                    Icons
-                                        .image_not_supported,
-                                    size: 60,
-                                    color:
-                                        Colors.grey,
-                                  ),
-                                );
-                              },
-                              loadingBuilder:
-                                  (
-                                context,
-                                child,
-                                progress,
-                              ) {
-                                if (progress ==
-                                    null) {
-                                  return child;
-                                }
-
-                                return SizedBox(
-                                  height: 260,
-                                  child:
-                                      Center(
-                                    child:
-                                        CircularProgressIndicator(
-                                      value: progress
-                                          .expectedTotalBytes !=
-                                          null
-                                          ? progress
-                                                  .cumulativeBytesLoaded /
-                                              progress
-                                                  .expectedTotalBytes!
-                                          : null,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          )
-                        else
-                          Container(
-                            width:
-                                double.infinity,
-                            height: 260,
-                            decoration:
-                                BoxDecoration(
-                              color:
-                                  Colors.grey[200],
-                              borderRadius:
-                                  BorderRadius
-                                      .circular(
-                                15,
-                              ),
-                            ),
-                            child:
-                                const Icon(
-                              Icons.image,
-                              size: 60,
-                              color:
-                                  Colors.grey,
-                            ),
-                          ),
-
-                        const SizedBox(height: 20),
-
-                        const Text(
-                          'PRODUTO',
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontSize: 16,
-                            fontWeight:
-                                FontWeight.bold,
-                          ),
-                        ),
-
-                        const SizedBox(height: 6),
-
-                        Text(
-                          produto.isNotEmpty
-                              ? produto
-                              : 'Produto Shopee',
-                          style:
-                              const TextStyle(
-                            fontSize: 23,
-                            fontWeight:
-                                FontWeight.bold,
-                          ),
-                        ),
-
-                        const SizedBox(height: 18),
-
-                        const Text(
-                          'PREÇO',
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontSize: 16,
-                            fontWeight:
-                                FontWeight.bold,
-                          ),
-                        ),
-
-                        const SizedBox(height: 6),
-
-                        Text(
-                          preco.isNotEmpty
-                              ? preco
-                              : 'Preço não encontrado',
-                          style:
-                              const TextStyle(
-                            fontSize: 24,
-                            fontWeight:
-                                FontWeight.bold,
-                            color:
-                                Colors.deepOrange,
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        const Text(
-                          'LINK DE DIVULGAÇÃO',
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontSize: 16,
-                            fontWeight:
-                                FontWeight.bold,
-                          ),
-                        ),
-
-                        const SizedBox(height: 6),
-
-                        SelectableText(
-                          linkFinal.isNotEmpty
-                              ? linkFinal
-                              : linkController
-                                  .text,
-                          style:
-                              const TextStyle(
-                            color: Colors.blue,
-                            fontSize: 15,
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        SizedBox(
-                          width:
-                              double.infinity,
-                          height: 52,
-                          child:
-                              ElevatedButton
-                                  .icon(
-                            onPressed:
-                                copiarDivulgacao,
-                            icon:
-                                const Icon(
-                              Icons
-                                  .content_copy,
-                            ),
-                            label: const Text(
-                              'GERAR DIVULGAÇÃO',
-                              style:
-                                  TextStyle(
-                                fontSize: 16,
-                                fontWeight:
-                                    FontWeight
-                                        .bold,
-                              ),
-                            ),
-                            style:
-                                ElevatedButton
-                                    .styleFrom(
-                              shape:
-                                  RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius
-                                        .circular(
-                                  25,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-              const SizedBox(height: 30),
-
-              const Center(
                 child: Text(
-                  'Cole o link da Shopee e toque em BUSCAR PRODUTO.',
-                  textAlign:
-                      TextAlign.center,
+                  erro,
                   style: TextStyle(
-                    color: Colors.grey,
+                    color: Colors.orange.shade900,
+                    fontSize: 16,
                   ),
                 ),
               ),
-            ],
-          ),
+
+            const SizedBox(height: 20),
+
+            Card(
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (imagem.isNotEmpty)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Image.network(
+                          imagem,
+                          width: double.infinity,
+                          height: 250,
+                          fit: BoxFit.contain,
+                          errorBuilder:
+                              (context, error, stackTrace) {
+                            return _imagemPadrao();
+                          },
+                        ),
+                      )
+                    else
+                      _imagemPadrao(),
+
+                    const SizedBox(height: 20),
+
+                    const Text(
+                      'PRODUTO',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    const SizedBox(height: 5),
+
+                    Text(
+                      produto.isEmpty
+                          ? 'Produto Shopee'
+                          : produto,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    const Text(
+                      'PREÇO',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    const SizedBox(height: 5),
+
+                    Text(
+                      preco.isEmpty
+                          ? 'Preço será carregado automaticamente'
+                          : preco,
+                      style: const TextStyle(
+                        color: Colors.deepOrange,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    const Text(
+                      'LINK DE DIVULGAÇÃO',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    const SizedBox(height: 5),
+
+                    SelectableText(
+                      linkFinal.isEmpty
+                          ? linkController.text
+                          : linkFinal,
+                      style: const TextStyle(
+                        color: Colors.blue,
+                        fontSize: 16,
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 55,
+                      child: ElevatedButton.icon(
+                        onPressed: copiarDivulgacao,
+                        icon: const Icon(Icons.copy),
+                        label: const Text(
+                          'GERAR DIVULGAÇÃO',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 30),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _imagemPadrao() {
+    return Container(
+      width: double.infinity,
+      height: 250,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: const Center(
+        child: Icon(
+          Icons.image,
+          size: 70,
+          color: Colors.grey,
         ),
       ),
     );
