@@ -1,5 +1,7 @@
 name: app_afiliado_shopee
-description: Aplicativo para criar divulgacoes de produtos Shopee usando prints.
+
+description: Aplicativo para criar divulgações de produtos Shopee usando prints.
+
 publish_to: "none"
 
 version: 1.0.0+1
@@ -19,6 +21,8 @@ dependencies:
 
   share_plus: 11.1.0
 
+  image_background_remover: ^2.0.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -27,4 +31,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  image_background_remover: ^2.0.1
