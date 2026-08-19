@@ -42,7 +42,6 @@ class _HomePageState extends State<HomePage> {
       TextEditingController();
 
   File? _imagemOriginal;
-
   File? _imagemRecortada;
 
   String _nomeProduto = '';
@@ -86,7 +85,7 @@ class _HomePageState extends State<HomePage> {
       // Primeiro lê o texto.
       await _lerTextoDaImagem(arquivo.path);
 
-      // Depois faz somente o RECORTE.
+      // Depois faz somente o recorte.
       final File? recortada =
           await _recortarFotoPrincipal(arquivo.path);
 
@@ -113,11 +112,6 @@ class _HomePageState extends State<HomePage> {
   // RECORTAR SOMENTE A FOTO PRINCIPAL
   //
   // NÃO REMOVE FUNDO.
-  //
-  // Para prints da Shopee:
-  // - ignora a barra superior do celular;
-  // - pega somente a região superior da página;
-  // - não pega preço, variações e descrição.
   // ============================================================
 
   Future<File?> _recortarFotoPrincipal(String caminho) async {
@@ -137,15 +131,13 @@ class _HomePageState extends State<HomePage> {
       final int largura = original.width;
       final int altura = original.height;
 
-      // Remove aproximadamente os primeiros 3%,
-      // onde normalmente ficam relógio/status do celular.
+      // Ignora aproximadamente a barra de status
+      // do celular.
       final int topo =
           (altura * 0.035).round();
 
-      // A foto principal da Shopee normalmente termina
-      // aproximadamente entre 44% e 48% da captura.
-      //
-      // Usamos 46% como ponto de corte.
+      // Região aproximada da foto principal
+      // nos prints da Shopee.
       final int finalFoto =
           (altura * 0.46).round();
 
@@ -156,8 +148,6 @@ class _HomePageState extends State<HomePage> {
         alturaRecorte = altura - topo;
       }
 
-      // Pequena margem nas laterais para evitar
-      // alguns elementos da interface.
       final int margemHorizontal =
           (largura * 0.015).round();
 
@@ -170,14 +160,20 @@ class _HomePageState extends State<HomePage> {
       final int larguraRecorte =
           largura - (margemHorizontal * 2);
 
-      // Garante que não ultrapasse a imagem.
       final int larguraFinal =
-          larguraRecorte.clamp(1, largura - x);
+          larguraRecorte.clamp(
+        1,
+        largura - x,
+      );
 
       final int alturaFinal =
-          alturaRecorte.clamp(1, altura - y);
+          alturaRecorte.clamp(
+        1,
+        altura - y,
+      );
 
-      final img.Image recorte = img.copyCrop(
+      final img.Image recorte =
+          img.copyCrop(
         original,
         x: x,
         y: y,
@@ -185,7 +181,6 @@ class _HomePageState extends State<HomePage> {
         height: alturaFinal,
       );
 
-      // Mantém a qualidade.
       final List<int> jpg =
           img.encodeJpg(
         recorte,
@@ -229,7 +224,7 @@ class _HomePageState extends State<HomePage> {
       final List<String> linhas = texto
           .split('\n')
           .map(
-            (linha) => linha.trim(),
+            (linha) => _limparLinhaOCR(linha),
           )
           .where(
             (linha) => linha.isNotEmpty,
@@ -258,8 +253,6 @@ class _HomePageState extends State<HomePage> {
           preco = match.group(0) ?? '';
           indicePreco = i;
 
-          // Se o OCR encontrou R$ corretamente,
-          // damos preferência.
           if (linhas[i]
               .toLowerCase()
               .contains('r\$')) {
@@ -269,7 +262,7 @@ class _HomePageState extends State<HomePage> {
       }
 
       // ==========================================================
-      // LIMPEZA DE TEXTO
+      // VERIFICA SE É LIXO DA INTERFACE
       // ==========================================================
 
       bool linhaEhLixo(String linha) {
@@ -293,12 +286,6 @@ class _HomePageState extends State<HomePage> {
           'compartilhar',
           'adicionar ao carrinho',
           'comprar agora',
-          'comissão extra',
-          'comissao extra',
-          'comissãoextra',
-          'comissaoextra',
-          'comissão',
-          'comissao',
           'aprenda com outros criadores',
           'compartilhe para ganhar',
           'chat',
@@ -312,13 +299,12 @@ class _HomePageState extends State<HomePage> {
         }
 
         // Percentuais não são nome de produto.
-        if (RegExp(r'\d+[,.]?\d*\s*%')
-            .hasMatch(t)) {
+        if (RegExp(
+          r'\d+[,.]?\d*\s*%',
+        ).hasMatch(t)) {
           return true;
         }
 
-        // Linhas muito curtas geralmente são
-        // elementos da interface.
         if (t.length < 5) {
           return true;
         }
@@ -328,16 +314,6 @@ class _HomePageState extends State<HomePage> {
 
       // ==========================================================
       // ENCONTRAR NOME DO PRODUTO
-      //
-      // Normalmente no print Shopee aparece:
-      //
-      // PREÇO
-      // COMISSÃO EXTRA
-      // NOME DO PRODUTO
-      // NOME CONTINUA...
-      // AFILIADOS / VENDIDO
-      //
-      // Então procuramos o título DEPOIS do preço.
       // ==========================================================
 
       if (indicePreco >= 0) {
@@ -345,20 +321,36 @@ class _HomePageState extends State<HomePage> {
 
         for (
           int i = indicePreco + 1;
-          i < linhas.length && i < indicePreco + 7;
+          i < linhas.length && i < indicePreco + 8;
           i++
         ) {
-          final String linha = linhas[i];
+          String linha = linhas[i];
 
-          if (linhaEhLixo(linha)) {
+          if (linha.isEmpty) {
+            continue;
+          }
+
+          // ------------------------------------------------------
+          // CORREÇÃO PRINCIPAL:
+          //
+          // Se o OCR retornar:
+          //
+          // COMISSÃO EXTRA Oxímetro de Pulso...
+          //
+          // removemos somente "COMISSÃO EXTRA" e mantemos
+          // o restante da linha.
+          // ------------------------------------------------------
+
+          linha = _removerComissaoExtra(linha);
+
+          if (linha.isEmpty) {
             continue;
           }
 
           final String minuscula =
               linha.toLowerCase();
 
-          // Aqui paramos quando chegamos
-          // aos dados de venda.
+          // Dados de venda indicam fim do título.
           if (minuscula.contains('afiliados') ||
               minuscula.contains('vendido') ||
               minuscula.contains('avaliação') ||
@@ -367,17 +359,20 @@ class _HomePageState extends State<HomePage> {
             break;
           }
 
+          if (linhaEhLixo(linha)) {
+            continue;
+          }
+
           if (regexPreco.hasMatch(linha)) {
             continue;
           }
 
-          // Não deixa uma linha gigante de interface
-          // entrar como produto.
+          // Evita textos gigantes da interface.
           if (linha.length <= 180) {
             partesNome.add(linha);
           }
 
-          // Normalmente o título possui 1 ou 2 linhas.
+          // Normalmente o título ocupa 1 ou 2 linhas.
           if (partesNome.length >= 2) {
             break;
           }
@@ -395,12 +390,35 @@ class _HomePageState extends State<HomePage> {
       if (nome.isEmpty) {
         final List<String> candidatos = [];
 
-        for (final String linha in linhas) {
-          if (linhaEhLixo(linha)) {
+        for (final String linhaOriginal in linhas) {
+          if (linhaOriginal.isEmpty) {
             continue;
           }
 
-          if (regexPreco.hasMatch(linha)) {
+          if (regexPreco.hasMatch(linhaOriginal)) {
+            continue;
+          }
+
+          String linha =
+              _removerComissaoExtra(
+            linhaOriginal,
+          );
+
+          if (linha.isEmpty) {
+            continue;
+          }
+
+          final String minuscula =
+              linha.toLowerCase();
+
+          if (minuscula.contains('afiliados') ||
+              minuscula.contains('vendido') ||
+              minuscula.contains('avaliação') ||
+              minuscula.contains('avaliacao')) {
+            continue;
+          }
+
+          if (linhaEhLixo(linha)) {
             continue;
           }
 
@@ -418,10 +436,11 @@ class _HomePageState extends State<HomePage> {
       }
 
       // ==========================================================
-      // LIMPAR ALGUNS ERROS DO OCR
+      // LIMPEZA FINAL
       // ==========================================================
 
-      nome = _limparNomeProduto(nome);
+      nome =
+          _limparNomeProduto(nome);
 
       if (!mounted) return;
 
@@ -442,37 +461,177 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // LIMPAR NOME
+  // LIMPAR LINHA DO OCR
+  //
+  // Remove caracteres invisíveis que podem aparecer
+  // quando o OCR reconhece o texto.
   // ============================================================
 
-  String _limparNomeProduto(String nome) {
-    String resultado = nome.trim();
+  String _limparLinhaOCR(String texto) {
+    String resultado = texto;
 
-    final List<RegExp> remover = [
+    // Remove alguns caracteres invisíveis.
+    resultado = resultado.replaceAll(
+      RegExp(r'[\u200B-\u200D\uFEFF]'),
+      '',
+    );
+
+    // Espaços duplicados.
+    resultado = resultado.replaceAll(
+      RegExp(r'\s+'),
+      ' ',
+    );
+
+    return resultado.trim();
+  }
+
+  // ============================================================
+  // REMOVER COMISSÃO EXTRA
+  //
+  // Trata:
+  //
+  // Comissão Extra
+  // COMISSÃO EXTRA
+  // COMISSÃOEXTRA
+  // comissãoextra
+  // cOMISSÃOEXTRA
+  //
+  // E também quando aparece grudado no nome:
+  //
+  // COMISSÃOEXTRA Oxímetro...
+  //
+  // Resultado:
+  //
+  // Oxímetro...
+  // ============================================================
+
+  String _removerComissaoExtra(String texto) {
+    String resultado =
+        _limparLinhaOCR(texto);
+
+    if (resultado.isEmpty) {
+      return '';
+    }
+
+    // Remove comissão + espaços + extra.
+    resultado = resultado.replaceAll(
       RegExp(
         r'comiss[aã]o\s*extra',
         caseSensitive: false,
       ),
+      '',
+    );
+
+    // Algumas leituras do OCR podem trocar
+    // o acento por caracteres estranhos.
+    resultado = resultado.replaceAll(
       RegExp(
-        r'comiss[aã]oextra',
+        r'comiss[a-zãáàâä]*o\s*extra',
         caseSensitive: false,
       ),
+      '',
+    );
+
+    // Remove percentuais.
+    resultado = resultado.replaceAll(
+      RegExp(
+        r'\d+[,.]?\d*\s*%',
+        caseSensitive: false,
+      ),
+      '',
+    );
+
+    // Remove separadores que ficaram depois
+    // da retirada da comissão.
+    resultado = resultado.replaceAll(
+      RegExp(r'^[\s:|•\-–—]+'),
+      '',
+    );
+
+    resultado = resultado.replaceAll(
+      RegExp(r'\s+'),
+      ' ',
+    );
+
+    return resultado.trim();
+  }
+
+  // ============================================================
+  // LIMPAR NOME DO PRODUTO
+  // ============================================================
+
+  String _limparNomeProduto(String nome) {
+    String resultado =
+        _limparLinhaOCR(nome);
+
+    // Primeira limpeza.
+    resultado =
+        _removerComissaoExtra(resultado);
+
+    // Remove possíveis palavras restantes
+    // relacionadas à comissão.
+    resultado = resultado.replaceAll(
+      RegExp(
+        r'\bcomiss[aã]o\b',
+        caseSensitive: false,
+      ),
+      '',
+    );
+
+    // Remove "extra" quando estiver associado
+    // à comissão.
+    resultado = resultado.replaceAll(
+      RegExp(
+        r'\bextra\b(?=\s+)',
+        caseSensitive: false,
+      ),
+      '',
+    );
+
+    // Remove percentuais.
+    resultado = resultado.replaceAll(
       RegExp(
         r'\b\d+[,.]?\d*\s*%',
         caseSensitive: false,
       ),
+      '',
+    );
+
+    // Remove alguns textos da interface caso
+    // o OCR tenha colocado no título.
+    resultado = resultado.replaceAll(
       RegExp(
-        r'^\s*-\s*',
+        r'\bcomprar agora\b',
+        caseSensitive: false,
       ),
-    ];
+      '',
+    );
 
-    for (final RegExp regex in remover) {
-      resultado =
-          resultado.replaceAll(regex, '');
-    }
+    resultado = resultado.replaceAll(
+      RegExp(
+        r'\badicionar ao carrinho\b',
+        caseSensitive: false,
+      ),
+      '',
+    );
 
-    resultado =
-        resultado.replaceAll(RegExp(r'\s+'), ' ');
+    // Limpa espaços.
+    resultado = resultado.replaceAll(
+      RegExp(r'\s+'),
+      ' ',
+    );
+
+    // Remove separadores no início.
+    resultado = resultado.replaceAll(
+      RegExp(r'^[\s:|•\-–—]+'),
+      '',
+    );
+
+    // Remove separadores no final.
+    resultado = resultado.replaceAll(
+      RegExp(r'[\s|•\-–—]+$'),
+      '',
+    );
 
     return resultado.trim();
   }
@@ -482,14 +641,18 @@ class _HomePageState extends State<HomePage> {
   // ============================================================
 
   String _normalizarPreco(String preco) {
-    String resultado = preco.trim();
+    String resultado =
+        preco.trim();
 
     if (resultado.isEmpty) {
       return '';
     }
 
-    if (!resultado.toLowerCase().contains('r\$')) {
-      resultado = 'R\$ $resultado';
+    if (!resultado
+        .toLowerCase()
+        .contains('r\$')) {
+      resultado =
+          'R\$ $resultado';
     }
 
     return resultado;
@@ -509,7 +672,8 @@ class _HomePageState extends State<HomePage> {
 
     if (!link.startsWith('http://') &&
         !link.startsWith('https://')) {
-      link = 'https://$link';
+      link =
+          'https://$link';
     }
 
     return link;
@@ -550,8 +714,7 @@ $link
   // ============================================================
   // CRIAR IMAGEM FINAL
   //
-  // A imagem é apenas o recorte original.
-  // NÃO existe remoção de fundo.
+  // NÃO REMOVE FUNDO.
   // ============================================================
 
   Future<File?> _criarImagemFinal() async {
@@ -576,11 +739,10 @@ $link
       final int alturaFoto =
           foto.height;
 
-      // Altura da faixa verde.
+      // Faixa verde abaixo da imagem.
       final int alturaFaixa =
           (largura * 0.20).round();
 
-      // Altura total.
       final int alturaTotal =
           alturaFoto + alturaFaixa;
 
@@ -600,7 +762,7 @@ $link
         ),
       );
 
-      // Coloca a foto ORIGINAL recortada.
+      // Coloca a foto sem alterar/remover fundo.
       img.compositeImage(
         resultado,
         foto,
@@ -609,10 +771,6 @@ $link
       );
 
       // Faixa verde.
-      final int verdeR = 5;
-      final int verdeG = 102;
-      final int verdeB = 72;
-
       img.fillRect(
         resultado,
         x1: 0,
@@ -620,17 +778,11 @@ $link
         x2: largura - 1,
         y2: alturaTotal - 1,
         color: img.ColorRgb8(
-          verdeR,
-          verdeG,
-          verdeB,
+          5,
+          102,
+          72,
         ),
       );
-
-      // Não desenhamos texto aqui porque a fonte
-      // precisa funcionar corretamente em Android.
-      //
-      // O nome continuará sendo enviado no texto
-      // da divulgação.
 
       final List<int> png =
           img.encodePng(resultado);
@@ -817,7 +969,6 @@ $link
               ],
             ),
           ),
-
           Container(
             color: Colors.white,
             width: double.infinity,
@@ -905,7 +1056,7 @@ $link
               ),
 
               // ==================================================
-              // BOTÃO
+              // ESCOLHER FOTO
               // ==================================================
 
               ElevatedButton.icon(
@@ -975,7 +1126,7 @@ $link
                 ),
 
               // ==================================================
-              // FOTO RECORTADA
+              // FOTO
               // ==================================================
 
               if (!_carregando)
@@ -1123,7 +1274,7 @@ $link
               ),
 
               // ==================================================
-              // COMPARTILHAR
+              // COMPARTILHAR FOTO
               // ==================================================
 
               if (_nomeProduto
@@ -1178,7 +1329,7 @@ $link
               ),
 
               // ==================================================
-              // TEXTO
+              // COMPARTILHAR TEXTO
               // ==================================================
 
               if (_nomeProduto
