@@ -30,13 +30,17 @@ jobs:
         run: |
           flutter pub get
 
-      - name: Limpar projeto
+      - name: Desativar R8
+        run: |
+          sed -i 's/isMinifyEnabled = true/isMinifyEnabled = false/g' android/app/build.gradle
+          sed -i 's/isShrinkResources = true/isShrinkResources = false/g' android/app/build.gradle
+          sed -i 's/minifyEnabled true/minifyEnabled false/g' android/app/build.gradle
+          sed -i 's/shrinkResources true/shrinkResources false/g' android/app/build.gradle
+
+      - name: Compilar APK
         run: |
           flutter clean
           flutter pub get
-
-      - name: Compilar APK sem R8
-        run: |
           flutter build apk --release --no-shrink
 
       - name: Disponibilizar APK
