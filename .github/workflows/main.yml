@@ -12,182 +12,60 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # 1. Baixar o código do projeto
       - name: Baixar código
         uses: actions/checkout@v4
 
-      # 2. Configurar Java
       - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # 3. Configurar Flutter
       - name: Configurar Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      # 4. Mostrar versões
       - name: Verificar Flutter
         run: |
           flutter --version
-          dart --version
-          java -version
+          flutter doctor -v
 
-      # 5. Criar estrutura Android
-      - name: Criar estrutura Android
+      - name: Criar estrutura Android se necessário
         run: |
-          if [ ! -f "android/app/build.gradle.kts" ] && [ ! -f "android/app/build.gradle" ]; then
+          if [ ! -d "android" ]; then
             flutter create --platforms=android .
           fi
 
-      # 6. Corrigir configuração Android
-      - name: Corrigir configuração Android
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          gradle_kts = Path("android/app/build.gradle.kts")
-          gradle = Path("android/app/build.gradle")
-
-          # ============================================================
-          # BUILD.GRADLE.KTS
-          # ============================================================
-          if gradle_kts.exists():
-              text = gradle_kts.read_text()
-
-              # Desativa minificação/R8 no build Release
-              text = text.replace(
-                  'isMinifyEnabled = true',
-                  'isMinifyEnabled = false'
-              )
-
-              text = text.replace(
-                  'minifyEnabled = true',
-                  'minifyEnabled = false'
-              )
-
-              # Garante que o bloco release tenha minificação desligada
-              if 'isMinifyEnabled = false' not in text and 'minifyEnabled = false' not in text:
-                  marker = 'buildTypes {'
-                  if marker in text:
-                      text = text.replace(
-                          marker,
-                          marker + '\n        release {\n            isMinifyEnabled = false\n        }',
-                          1
-                      )
-
-              gradle_kts.write_text(text)
-
-          # ============================================================
-          # BUILD.GRADLE
-          # ============================================================
-          elif gradle.exists():
-              text = gradle.read_text()
-
-              text = text.replace(
-                  'minifyEnabled true',
-                  'minifyEnabled false'
-              )
-
-              text = text.replace(
-                  'minifyEnabled = true',
-                  'minifyEnabled = false'
-              )
-
-              gradle.write_text(text)
-
-          print("Configuração Android corrigida.")
-          PY
-
-      # 7. Criar regras ProGuard
-      - name: Criar regras ProGuard
-        shell: bash
-        run: |
-          mkdir -p android/app
-
-          cat > android/app/proguard-rules.pro <<'EOF'
-          # ============================================================
-          # GOOGLE ML KIT
-          # ============================================================
-
-          -dontwarn com.google.mlkit.**
-          -dontwarn com.google.android.gms.**
-          -dontwarn javax.annotation.**
-          -dontwarn org.tensorflow.**
-
-          -keep class com.google.mlkit.** { *; }
-          -keep class com.google.android.gms.** { *; }
-
-          # ============================================================
-          # IMAGE PICKER
-          # ============================================================
-
-          -keep class io.flutter.plugins.imagepicker.** { *; }
-
-          # ============================================================
-          # FLUTTER PLUGINS
-          # ============================================================
-
-          -keep class io.flutter.** { *; }
-          EOF
-
-      # 8. Corrigir AndroidManifest
-      - name: Configurar AndroidManifest
-        shell: bash
-        run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-
-          if [ -f "$MANIFEST" ]; then
-            if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
-              sed -i '/<manifest/a\    <uses-permission android:name="android.permission.INTERNET"/>' "$MANIFEST"
-            fi
-          fi
-
-      # 9. Limpar projeto
-      - name: Limpar projeto
-        run: |
-          flutter clean
-
-      # 10. Instalar dependências
       - name: Instalar dependências
         run: |
+          flutter clean
           flutter pub get
 
-      # 11. Verificar dependências
       - name: Verificar dependências
         run: |
           flutter pub deps
 
-      # 12. Compilar APK
       - name: Compilar APK
         run: |
-          flutter build apk --release --no-tree-shake-icons
+          flutter build apk --release --no-shrink --no-tree-shake-icons
 
-      # 13. Verificar APK
       - name: Verificar APK
         run: |
-          echo "======================================"
-          echo "APK GERADO:"
-          echo "======================================"
-          find build/app/outputs/flutter-apk -type f -name "*.apk" -print
           ls -lh build/app/outputs/flutter-apk/
+          test -f build/app/outputs/flutter-apk/app-release.apk
 
-      # 14. Disponibilizar APK
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-afiliado-shopee-apk
+          name: app-release
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
 
       - name: Finalizado
         run: |
-          echo "======================================"
-          echo "       APK GERADO COM SUCESSO"
-          echo "======================================"
+          echo "========================================"
+          echo "APK GERADO COM SUCESSO!"
+          echo "========================================"
+          echo "Arquivo: build/app/outputs/flutter-apk/app-release.apk"
