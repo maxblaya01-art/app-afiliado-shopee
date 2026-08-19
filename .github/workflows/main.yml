@@ -30,7 +30,12 @@ jobs:
         run: |
           flutter pub get
 
-      - name: Compilar APK
+      - name: Limpar projeto
+        run: |
+          flutter clean
+          flutter pub get
+
+      - name: Compilar APK sem R8
         run: |
           flutter build apk --release --no-shrink
 
