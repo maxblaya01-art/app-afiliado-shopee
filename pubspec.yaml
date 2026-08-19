@@ -1,5 +1,5 @@
 name: app_afiliado_shopee
-description: Aplicativo para divulgação de produtos da Shopee.
+description: Aplicativo para buscar informações de produtos da Shopee e gerar divulgações.
 publish_to: "none"
 
 version: 1.0.0+1
@@ -10,12 +10,15 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
   http: ^1.2.2
-  url_launcher: ^6.3.1
+
+  cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
   flutter_lints: ^4.0.0
 
 flutter:
