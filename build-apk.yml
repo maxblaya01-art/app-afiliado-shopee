@@ -11,25 +11,84 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Baixar código
         uses: actions/checkout@v4
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
       - name: Configurar Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
-      - name: Criar arquivos Android
-        run: flutter create --platforms=android .
+      - name: Verificar Flutter
+        run: |
+          flutter --version
+          flutter doctor -v
+
+      - name: Criar estrutura Android
+        run: |
+          flutter create --platforms=android .
+
+      - name: Corrigir configuração Android
+        shell: bash
+        run: |
+          echo "Corrigindo configurações de redução..."
+
+          if [ -f android/app/build.gradle ]; then
+            sed -i 's/shrinkResources[[:space:]]*=[[:space:]]*true/shrinkResources = false/g' android/app/build.gradle
+            sed -i 's/shrinkResources[[:space:]]\+true/shrinkResources false/g' android/app/build.gradle
+            sed -i 's/minifyEnabled[[:space:]]*=[[:space:]]*true/minifyEnabled = false/g' android/app/build.gradle
+            sed -i 's/minifyEnabled[[:space:]]\+true/minifyEnabled false/g' android/app/build.gradle
+          fi
+
+          if [ -f android/app/build.gradle.kts ]; then
+            sed -i 's/isShrinkResources[[:space:]]*=[[:space:]]*true/isShrinkResources = false/g' android/app/build.gradle.kts
+            sed -i 's/isMinifyEnabled[[:space:]]*=[[:space:]]*true/isMinifyEnabled = false/g' android/app/build.gradle.kts
+          fi
+
+          echo "Configuração Android:"
+          if [ -f android/app/build.gradle ]; then
+            grep -n -E "shrinkResources|minifyEnabled" android/app/build.gradle || true
+          fi
+
+          if [ -f android/app/build.gradle.kts ]; then
+            grep -n -E "isShrinkResources|isMinifyEnabled" android/app/build.gradle.kts || true
+          fi
 
       - name: Instalar dependências
         run: flutter pub get
 
-      - name: Gerar APK
-        run: flutter build apk --release
+      - name: Limpar projeto
+        run: flutter clean
+
+      - name: Instalar dependências novamente
+        run: flutter pub get
+
+      - name: Compilar APK
+        run: flutter build apk --release --no-shrink --no-tree-shake-icons
+
+      - name: Verificar APK
+        run: |
+          echo "Procurando APK..."
+          find build/app/outputs/flutter-apk -type f -name "*.apk" -print
+          test -f build/app/outputs/flutter-apk/app-release.apk
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-afiliado-shopee
+          name: app-afiliado-shopee-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      - name: Finalizado
+        run: |
+          echo "======================================"
+          echo "APK GERADO COM SUCESSO!"
+          echo "======================================"
