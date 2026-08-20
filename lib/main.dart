@@ -48,7 +48,8 @@ class _LinhaOCR {
 
 class _HomePageState extends State<HomePage> {
   final ImagePicker _picker = ImagePicker();
-  final TextEditingController _linkController = TextEditingController();
+  final TextEditingController _linkController =
+      TextEditingController();
 
   File? _imagemOriginal;
   File? _imagemRecortada;
@@ -145,14 +146,6 @@ class _HomePageState extends State<HomePage> {
     resultado = resultado.replaceAll(
       RegExp(
         r'comiss[aã]oextra',
-        caseSensitive: false,
-      ),
-      ' ',
-    );
-
-    resultado = resultado.replaceAll(
-      RegExp(
-        r'comiss[aã]o\s*ex\s*tra',
         caseSensitive: false,
       ),
       ' ',
@@ -332,6 +325,8 @@ class _HomePageState extends State<HomePage> {
       'comissao extra',
       'comissãoextra',
       'comissaoextra',
+      'comissão',
+      'comissao',
       'shopee',
       'afiliados',
       'afiliado',
@@ -358,18 +353,22 @@ class _HomePageState extends State<HomePage> {
       'entrega',
       'confira aqui',
       'aproveite a oferta',
-      '4.9',
-      '4,9',
-      '4.8',
-      '4,8',
-      '5.0',
-      '5,0',
     ];
 
     for (final palavra in palavras) {
       if (t.contains(palavra)) {
         return true;
       }
+    }
+
+    // ----------------------------------------------------------
+    // AVALIAÇÕES
+    // ----------------------------------------------------------
+
+    if (RegExp(
+      r'^\d[.,]\d$',
+    ).hasMatch(t)) {
+      return true;
     }
 
     // ----------------------------------------------------------
@@ -395,6 +394,8 @@ class _HomePageState extends State<HomePage> {
       'comissao extra',
       'comissãoextra',
       'comissaoextra',
+      'comissão',
+      'comissao',
       'afiliados',
       'afiliado',
       'promoveram',
@@ -464,19 +465,28 @@ class _HomePageState extends State<HomePage> {
     // REMOVE REPETIÇÃO DA ÚLTIMA PALAVRA
     // ----------------------------------------------------------
 
-    final palavrasFinais = resultado.split(' ');
+    final palavrasFinais =
+        resultado.split(' ');
 
     if (palavrasFinais.length >= 4) {
-      final ultima = palavrasFinais.last.toLowerCase();
+      final ultima =
+          palavrasFinais.last.toLowerCase();
 
-      final apareceuAntes = palavrasFinais
-          .sublist(0, palavrasFinais.length - 1)
-          .map((e) => e.toLowerCase())
-          .contains(ultima);
+      final apareceuAntes =
+          palavrasFinais
+              .sublist(
+                0,
+                palavrasFinais.length - 1,
+              )
+              .map(
+                (e) => e.toLowerCase(),
+              )
+              .contains(ultima);
 
       if (apareceuAntes) {
         palavrasFinais.removeLast();
-        resultado = palavrasFinais.join(' ');
+        resultado =
+            palavrasFinais.join(' ');
       }
     }
 
@@ -501,17 +511,16 @@ class _HomePageState extends State<HomePage> {
   // ============================================================
   // RECORTAR SOMENTE A FOTO
   //
-  // IMPORTANTE:
   // NÃO REMOVE O FUNDO.
-  //
-  // Apenas corta a área superior onde está a foto do produto.
+  // Apenas corta a região superior do print.
   // ============================================================
 
   Future<File?> _recortarAreaDoProduto(
     String caminho,
   ) async {
     try {
-      final File arquivo = File(caminho);
+      final File arquivo =
+          File(caminho);
 
       final Uint8List bytes =
           await arquivo.readAsBytes();
@@ -523,33 +532,17 @@ class _HomePageState extends State<HomePage> {
         return null;
       }
 
-      final int largura = original.width;
-      final int altura = original.height;
+      final int largura =
+          original.width;
 
-      // --------------------------------------------------------
-      // TOPO
-      //
-      // Retira somente a barra de status do celular.
-      // --------------------------------------------------------
+      final int altura =
+          original.height;
 
       int topo =
           (altura * 0.035).round();
 
-      // --------------------------------------------------------
-      // FINAL DA FOTO
-      //
-      // A área principal da foto da Shopee termina normalmente
-      // antes da região do preço/título.
-      //
-      // Usamos 44% para evitar que o preço apareça.
-      // --------------------------------------------------------
-
       int fundo =
           (altura * 0.44).round();
-
-      // --------------------------------------------------------
-      // SEGURANÇA
-      // --------------------------------------------------------
 
       if (topo < 0) {
         topo = 0;
@@ -564,18 +557,12 @@ class _HomePageState extends State<HomePage> {
             (altura * 0.44).round();
       }
 
-      // --------------------------------------------------------
-      // MARGEM LATERAL
-      //
-      // Retira somente uma pequena borda.
-      // O fundo da imagem continua intacto.
-      // --------------------------------------------------------
-
       final int margemX =
           (largura * 0.025).round();
 
       int esquerda = margemX;
-      int direita = largura - margemX;
+      int direita =
+          largura - margemX;
 
       if (esquerda < 0) {
         esquerda = 0;
@@ -630,6 +617,44 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
+  // VERIFICA SE A LINHA PARECE SER TÍTULO
+  // ============================================================
+
+  bool _pareceTituloProduto(String texto) {
+    final t = texto.trim();
+
+    if (t.isEmpty) {
+      return false;
+    }
+
+    if (_ehInterface(t)) {
+      return false;
+    }
+
+    if (_ehTextoIgnorado(t)) {
+      return false;
+    }
+
+    if (t.length < 5) {
+      return false;
+    }
+
+    if (t.length > 180) {
+      return false;
+    }
+
+    // Não aceitar linha composta somente por números,
+    // símbolos ou porcentagem.
+    if (RegExp(
+      r'^[\d\s.,/%\-+]+$',
+    ).hasMatch(t)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  // ============================================================
   // OCR PRINCIPAL
   // ============================================================
 
@@ -638,12 +663,15 @@ class _HomePageState extends State<HomePage> {
   ) async {
     final TextRecognizer reconhecedor =
         TextRecognizer(
-      script: TextRecognitionScript.latin,
+      script:
+          TextRecognitionScript.latin,
     );
 
     try {
       final InputImage imagem =
-          InputImage.fromFilePath(caminho);
+          InputImage.fromFilePath(
+        caminho,
+      );
 
       final RecognizedText resultado =
           await reconhecedor.processImage(
@@ -656,14 +684,14 @@ class _HomePageState extends State<HomePage> {
       final List<_LinhaOCR> linhas = [];
 
       // --------------------------------------------------------
-      // PEGAR TODAS AS LINHAS + POSIÇÃO
+      // PEGAR TODAS AS LINHAS COM POSIÇÃO
       // --------------------------------------------------------
 
       for (final bloco
           in resultado.blocks) {
         for (final linha
             in bloco.lines) {
-          final texto =
+          final String texto =
               linha.text.trim();
 
           if (texto.isEmpty) {
@@ -683,24 +711,26 @@ class _HomePageState extends State<HomePage> {
       // ORDENAR DE CIMA PARA BAIXO
       // --------------------------------------------------------
 
-      linhas.sort((a, b) {
-        final diferencaY =
-            a.caixa.top.compareTo(
-          b.caixa.top,
-        );
+      linhas.sort(
+        (a, b) {
+          final diferencaY =
+              a.caixa.top.compareTo(
+            b.caixa.top,
+          );
 
-        if (diferencaY != 0) {
-          return diferencaY;
-        }
+          if (diferencaY != 0) {
+            return diferencaY;
+          }
 
-        return a.caixa.left.compareTo(
-          b.caixa.left,
-        );
-      });
+          return a.caixa.left.compareTo(
+            b.caixa.left,
+          );
+        },
+      );
 
-      // --------------------------------------------------------
-      // PREÇO
-      // --------------------------------------------------------
+      // ========================================================
+      // ENCONTRAR O PREÇO
+      // ========================================================
 
       final RegExp regexPreco =
           RegExp(
@@ -715,16 +745,16 @@ class _HomePageState extends State<HomePage> {
       for (int i = 0;
           i < linhas.length;
           i++) {
-        final texto =
+        final String texto =
             linhas[i].texto;
 
-        final match =
+        final Match? match =
             regexPreco.firstMatch(
           texto,
         );
 
         if (match != null) {
-          final valor =
+          final String valor =
               match.group(0) ?? '';
 
           if (valor.isNotEmpty) {
@@ -738,132 +768,42 @@ class _HomePageState extends State<HomePage> {
       // ========================================================
       // NOME DO PRODUTO
       //
-      // CORREÇÃO PRINCIPAL:
+      // IMPORTANTE:
       //
-      // O título da Shopee fica DEPOIS DA FOTO e ANTES DO PREÇO.
+      // Neste layout da Shopee o título vem DEPOIS do preço.
       //
-      // O código antigo procurava depois do preço e acabava
-      // capturando informações que não pertenciam ao título.
+      // Exemplo do seu print:
+      //
+      // R$397,00
+      // COMISSÃO EXTRA
+      // 4,5%
+      // Projetor VEVSHAO A12 Android 13...
+      //
+      // Portanto NÃO vamos mais procurar o nome antes do preço.
       // ========================================================
 
       final List<String> partesNome = [];
 
-      // --------------------------------------------------------
-      // Primeiro encontramos uma região aproximada onde termina
-      // a foto.
-      //
-      // Essa posição é baseada no mesmo recorte usado na imagem.
-      // --------------------------------------------------------
+      if (indiceLinhaPreco >= 0) {
+        // ------------------------------------------------------
+        // COMEÇA IMEDIATAMENTE DEPOIS DO PREÇO
+        // ------------------------------------------------------
 
-      double limiteDepoisDaFoto =
-          0;
-
-      if (linhas.isNotEmpty) {
-        final maiorBottom =
-            linhas
-                .map(
-                  (linha) =>
-                      linha.caixa.bottom,
-                )
-                .reduce(
-                  (a, b) =>
-                      a > b ? a : b,
-                );
-
-        limiteDepoisDaFoto =
-            maiorBottom * 0.44;
-      }
-
-      // --------------------------------------------------------
-      // Procuramos o título:
-      //
-      // 1. abaixo da área da foto;
-      // 2. antes do preço;
-      // 3. ignorando interface;
-      // 4. podendo ter várias linhas.
-      // --------------------------------------------------------
-
-      for (int i = 0;
+        for (
+          int i = indiceLinhaPreco + 1;
           i < linhas.length;
-          i++) {
-        final linhaOCR =
-            linhas[i];
-
-        final String original =
-            linhaOCR.texto.trim();
-
-        // Não pegar texto muito acima da região do título.
-        if (linhaOCR.caixa.top <
-            limiteDepoisDaFoto) {
-          continue;
-        }
-
-        // Se já encontramos preço,
-        // o título precisa estar ANTES dele.
-        if (indiceLinhaPreco >= 0 &&
-            i >= indiceLinhaPreco) {
-          break;
-        }
-
-        if (_ehInterface(original)) {
-          continue;
-        }
-
-        String linha =
-            _limparLinha(original);
-
-        if (linha.isEmpty) {
-          continue;
-        }
-
-        if (_ehTextoIgnorado(linha)) {
-          continue;
-        }
-
-        if (linha.length < 3) {
-          continue;
-        }
-
-        if (linha.length > 120) {
-          continue;
-        }
-
-        // ------------------------------------------------------
-        // Evita colocar números soltos ou elementos de interface.
-        // ------------------------------------------------------
-
-        if (RegExp(
-          r'^[\d\s.,/%\-]+$',
-        ).hasMatch(linha)) {
-          continue;
-        }
-
-        partesNome.add(linha);
-
-        // ------------------------------------------------------
-        // Títulos da Shopee podem ter várias linhas.
-        // Permite até 6 linhas.
-        // ------------------------------------------------------
-
-        if (partesNome.length >= 6) {
-          break;
-        }
-      }
-
-      // ========================================================
-      // SEGUNDO MÉTODO DE SEGURANÇA
-      //
-      // Se não encontrou o título pelo posicionamento,
-      // procura linhas próximas ao preço, mas ANTES dele.
-      // ========================================================
-
-      if (partesNome.isEmpty &&
-          indiceLinhaPreco >= 0) {
-        for (int i = indiceLinhaPreco - 1;
-            i >= 0;
-            i--) {
-          final original =
+          i++
+        ) {
+          final String original =
               linhas[i].texto.trim();
+
+          if (original.isEmpty) {
+            continue;
+          }
+
+          // ----------------------------------------------------
+          // IGNORA ELEMENTOS DA INTERFACE
+          // ----------------------------------------------------
 
           if (_ehInterface(original)) {
             continue;
@@ -876,25 +816,37 @@ class _HomePageState extends State<HomePage> {
             continue;
           }
 
-          if (_ehTextoIgnorado(linha)) {
+          if (!_pareceTituloProduto(
+            linha,
+          )) {
             continue;
           }
 
-          if (linha.length < 3 ||
-              linha.length > 120) {
-            continue;
-          }
+          // ----------------------------------------------------
+          // EVITA PEGAR HORÁRIO
+          // ----------------------------------------------------
 
           if (RegExp(
-            r'^[\d\s.,/%\-]+$',
+            r'^\d{1,2}:\d{2}$',
           ).hasMatch(linha)) {
             continue;
           }
 
-          partesNome.insert(
-            0,
-            linha,
-          );
+          // ----------------------------------------------------
+          // EVITA ESTRELAS / NOTAS
+          // ----------------------------------------------------
+
+          if (RegExp(
+            r'^\d[.,]\d$',
+          ).hasMatch(linha)) {
+            continue;
+          }
+
+          partesNome.add(linha);
+
+          // ----------------------------------------------------
+          // O TÍTULO PODE TER ATÉ 6 LINHAS.
+          // ----------------------------------------------------
 
           if (partesNome.length >= 6) {
             break;
@@ -903,36 +855,59 @@ class _HomePageState extends State<HomePage> {
       }
 
       // ========================================================
-      // FALLBACK
+      // SEGUNDO MÉTODO
+      //
+      // Se o OCR não encontrou o preço corretamente, usamos
+      // a posição vertical da região inferior da foto.
+      //
+      // MAS SOMENTE COMO SEGUNDA OPÇÃO.
+      //
+      // Isso evita pegar "20:59 Max Support..." dentro da foto.
       // ========================================================
 
       if (partesNome.isEmpty) {
+        double maiorY =
+            0;
+
+        if (linhas.isNotEmpty) {
+          maiorY = linhas
+              .map(
+                (linha) =>
+                    linha.caixa.bottom,
+              )
+              .reduce(
+                (a, b) =>
+                    a > b ? a : b,
+              );
+        }
+
+        // ------------------------------------------------------
+        // Aproximação da parte inferior da tela.
+        // ------------------------------------------------------
+
+        final double limite =
+            maiorY * 0.50;
+
         for (final linhaOCR
             in linhas) {
+          if (linhaOCR.caixa.top <
+              limite) {
+            continue;
+          }
+
           String linha =
               _limparLinha(
             linhaOCR.texto,
           );
 
-          if (linha.isEmpty) {
-            continue;
-          }
-
-          if (_ehTextoIgnorado(linha)) {
-            continue;
-          }
-
-          if (_ehInterface(linha)) {
-            continue;
-          }
-
-          if (linha.length < 5 ||
-              linha.length > 120) {
+          if (!_pareceTituloProduto(
+            linha,
+          )) {
             continue;
           }
 
           if (RegExp(
-            r'^[\d\s.,/%\-]+$',
+            r'^\d{1,2}:\d{2}$',
           ).hasMatch(linha)) {
             continue;
           }
@@ -946,7 +921,9 @@ class _HomePageState extends State<HomePage> {
       }
 
       // ========================================================
-      // MONTAR NOME
+      // NÃO USAR MAIS FALLBACK PEGANDO QUALQUER TEXTO DA IMAGEM
+      //
+      // Essa era uma das causas do erro.
       // ========================================================
 
       String nome =
@@ -955,16 +932,42 @@ class _HomePageState extends State<HomePage> {
       nome =
           _ajustarNomeProduto(nome);
 
-      // Última limpeza.
-      nome =
-          _limparLinha(nome);
+      // --------------------------------------------------------
+      // LIMPEZA FINAL
+      // --------------------------------------------------------
 
-      // ========================================================
-      // REMOVE QUALQUER RESTO DE RETICÊNCIAS
-      // ========================================================
+      nome = _limparLinha(nome);
 
       nome = nome.replaceAll(
         RegExp(r'(\.{2,}|…+)'),
+        ' ',
+      );
+
+      nome = nome.replaceAll(
+        RegExp(r'\s+'),
+        ' ',
+      ).trim();
+
+      // ========================================================
+      // SEGURANÇA EXTRA
+      //
+      // Se por algum motivo ainda aparecer texto da comissão,
+      // retiramos novamente.
+      // ========================================================
+
+      nome = nome.replaceAll(
+        RegExp(
+          r'comiss[aã]o\s*ex\s*tra',
+          caseSensitive: false,
+        ),
+        ' ',
+      );
+
+      nome = nome.replaceAll(
+        RegExp(
+          r'\b\d{1,3}(?:[.,]\d+)?\s*%',
+          caseSensitive: false,
+        ),
         ' ',
       );
 
@@ -979,9 +982,12 @@ class _HomePageState extends State<HomePage> {
 
       if (nome.length > 180) {
         nome =
-            nome.substring(0, 180).trim();
+            nome.substring(
+          0,
+          180,
+        ).trim();
 
-        final ultimoEspaco =
+        final int ultimoEspaco =
             nome.lastIndexOf(' ');
 
         if (ultimoEspaco > 20) {
@@ -991,6 +997,17 @@ class _HomePageState extends State<HomePage> {
             ultimoEspaco,
           ).trim();
         }
+      }
+
+      // ========================================================
+      // NORMALIZAR PREÇO
+      // ========================================================
+
+      if (preco.isNotEmpty &&
+          !preco
+              .toLowerCase()
+              .startsWith('r\$')) {
+        preco = 'R$$preco';
       }
 
       // ========================================================
@@ -1007,12 +1024,20 @@ class _HomePageState extends State<HomePage> {
       }
 
       setState(() {
-        _textoLido = textoCompleto;
-        _nomeProduto = nome;
-        _preco = preco;
+        _textoLido =
+            textoCompleto;
+
+        _nomeProduto =
+            nome;
+
+        _preco =
+            preco;
+
         _imagemRecortada =
             fotoRecortada;
-        _carregando = false;
+
+        _carregando =
+            false;
       });
     } catch (e) {
       if (!mounted) {
@@ -1043,9 +1068,14 @@ class _HomePageState extends State<HomePage> {
       return '';
     }
 
-    if (!link.startsWith('http://') &&
-        !link.startsWith('https://')) {
-      link = 'https://$link';
+    if (!link.startsWith(
+          'http://',
+        ) &&
+        !link.startsWith(
+          'https://',
+        )) {
+      link =
+          'https://$link';
     }
 
     return link;
@@ -1179,9 +1209,12 @@ $link
     ScaffoldMessenger.of(context)
         .showSnackBar(
       SnackBar(
-        content: Text(mensagem),
+        content:
+            Text(mensagem),
         duration:
-            const Duration(seconds: 4),
+            const Duration(
+          seconds: 4,
+        ),
       ),
     );
   }
@@ -1208,7 +1241,9 @@ $link
           hintText:
               'Cole seu link aqui',
           prefixIcon:
-              const Icon(Icons.link),
+              const Icon(
+            Icons.link,
+          ),
           border:
               OutlineInputBorder(
             borderRadius:
@@ -1439,8 +1474,7 @@ $link
             ),
           ),
           style:
-              OutlinedButton
-                  .styleFrom(
+              OutlinedButton.styleFrom(
             foregroundColor:
                 Colors.deepOrange,
             side:
@@ -1500,8 +1534,7 @@ $link
                 ),
               ),
               style:
-                  ElevatedButton
-                      .styleFrom(
+                  ElevatedButton.styleFrom(
                 backgroundColor:
                     Colors.deepOrange,
                 foregroundColor:
@@ -1544,8 +1577,7 @@ $link
                 ),
               ),
               style:
-                  OutlinedButton
-                      .styleFrom(
+                  OutlinedButton.styleFrom(
                 foregroundColor:
                     Colors.deepOrange,
                 side:
@@ -1642,8 +1674,7 @@ $link
                       ),
                     ),
                     style:
-                        ElevatedButton
-                            .styleFrom(
+                        ElevatedButton.styleFrom(
                       backgroundColor:
                           const Color(
                         0xFFFFEEE8,
