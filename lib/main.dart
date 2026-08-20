@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:image/image.dart' as img;
 
 void main() {
   runApp(const ShopeeApp());
@@ -48,7 +50,8 @@ class _HomePageState extends State<HomePage> {
   final ImagePicker _picker = ImagePicker();
   final TextEditingController _linkController = TextEditingController();
 
-  File? _imagem;
+  File? _imagemOriginal;
+  File? _imagemRecortada;
 
   String _nomeProduto = '';
   String _preco = '';
@@ -78,7 +81,8 @@ class _HomePageState extends State<HomePage> {
       }
 
       setState(() {
-        _imagem = File(arquivo.path);
+        _imagemOriginal = File(arquivo.path);
+        _imagemRecortada = null;
         _carregando = true;
         _nomeProduto = '';
         _preco = '';
@@ -100,52 +104,37 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // NORMALIZAR TEXTO DO OCR
+  // LIMPAR TUDO
   // ============================================================
 
-  String _normalizarTexto(String texto) {
-    String resultado = texto;
+  void _limparTudo() {
+    setState(() {
+      _imagemOriginal = null;
+      _imagemRecortada = null;
+      _nomeProduto = '';
+      _preco = '';
+      _textoLido = '';
+      _carregando = false;
+      _linkController.clear();
+    });
 
-    resultado = resultado
-        .replaceAll('Á', 'á')
-        .replaceAll('À', 'à')
-        .replaceAll('Ã', 'ã')
-        .replaceAll('Â', 'â')
-        .replaceAll('É', 'é')
-        .replaceAll('Ê', 'ê')
-        .replaceAll('Í', 'í')
-        .replaceAll('Ó', 'ó')
-        .replaceAll('Ô', 'ô')
-        .replaceAll('Õ', 'õ')
-        .replaceAll('Ú', 'ú')
-        .replaceAll('Ç', 'ç');
-
-    resultado = resultado.replaceAll(
-      RegExp(r'\s+'),
-      ' ',
-    );
-
-    return resultado.trim();
+    _mostrarMensagem('Tudo limpo. Você pode adicionar outro print.');
   }
 
   // ============================================================
-  // LIMPAR LINHA
+  // LIMPAR LINHA OCR
   // ============================================================
 
   String _limparLinha(String texto) {
-    String resultado = _normalizarTexto(texto);
-
-    if (resultado.isEmpty) {
-      return '';
-    }
+    String resultado = texto.trim();
 
     // ----------------------------------------------------------
-    // REMOVE COMISSÃO EXTRA EM TODAS AS FORMAS MAIS COMUNS
+    // REMOVE COMISSÃO EXTRA
     // ----------------------------------------------------------
 
     resultado = resultado.replaceAll(
       RegExp(
-        r'comiss[aã]o\s*extra',
+        r'comiss[aã]o\s*ex\s*tra',
         caseSensitive: false,
       ),
       ' ',
@@ -153,7 +142,7 @@ class _HomePageState extends State<HomePage> {
 
     resultado = resultado.replaceAll(
       RegExp(
-        r'comiss[aã]o\s*ex\s*tra',
+        r'comiss[aã]o\s*extra',
         caseSensitive: false,
       ),
       ' ',
@@ -167,44 +156,8 @@ class _HomePageState extends State<HomePage> {
       ' ',
     );
 
-    resultado = resultado.replaceAll(
-      RegExp(
-        r'comiss[aã]o\s*ex\s*tr[aã]',
-        caseSensitive: false,
-      ),
-      ' ',
-    );
-
     // ----------------------------------------------------------
-    // REMOVE FORMAS EM QUE O OCR JUNTOU TUDO
-    // ----------------------------------------------------------
-
-    resultado = resultado.replaceAll(
-      RegExp(
-        r'comiss[aã]oextra',
-        caseSensitive: false,
-      ),
-      ' ',
-    );
-
-    resultado = resultado.replaceAll(
-      RegExp(
-        r'comissaoextra',
-        caseSensitive: false,
-      ),
-      ' ',
-    );
-
-    resultado = resultado.replaceAll(
-      RegExp(
-        r'comissaoex\W*tra',
-        caseSensitive: false,
-      ),
-      ' ',
-    );
-
-    // ----------------------------------------------------------
-    // REMOVE PORCENTAGEM
+    // REMOVE PORCENTAGENS
     // ----------------------------------------------------------
 
     resultado = resultado.replaceAll(
@@ -216,47 +169,47 @@ class _HomePageState extends State<HomePage> {
     );
 
     // ----------------------------------------------------------
-    // REMOVE EXPRESSÕES DE COMISSÃO
+    // REMOVE No.11 / Nº11 ETC.
     // ----------------------------------------------------------
 
     resultado = resultado.replaceAll(
       RegExp(
-        r'\bcomiss[aã]o\b',
-        caseSensitive: false,
-      ),
-      ' ',
-    );
-
-    resultado = resultado.replaceAll(
-      RegExp(
-        r'\bextra\b',
+        r'\b(?:no|nº|n°)\.?\s*\d+\b',
         caseSensitive: false,
       ),
       ' ',
     );
 
     // ----------------------------------------------------------
-    // REMOVE TEXTOS DE INTERFACE
+    // REMOVE PALAVRAS DE COMISSÃO
+    // ----------------------------------------------------------
+
+    resultado = resultado.replaceAll(
+      RegExp(
+        r'\b(?:comissão|comissao|extra)\b',
+        caseSensitive: false,
+      ),
+      ' ',
+    );
+
+    // ----------------------------------------------------------
+    // TEXTOS DA INTERFACE SHOPEE
     // ----------------------------------------------------------
 
     final palavrasRemover = [
-      'shopee',
-      'afiliados',
-      'afiliado',
-      'promoveram',
       'mais vendidos',
-      'vendido',
-      'vendidos',
       'aprenda com outros criadores',
       'compartilhe para ganhar',
       'compartilhar',
-      'compartilhe',
       'favorito',
       'chat',
-      'cupom',
+      'afiliados promoveram',
+      'vendido',
+      'vendidos',
+      'avaliações',
+      'avaliacoes',
       'oferta',
-      'promoção',
-      'promocao',
+      'cupom',
       'frete grátis',
       'frete gratis',
       'comprar agora',
@@ -288,37 +241,28 @@ class _HomePageState extends State<HomePage> {
     );
 
     // ----------------------------------------------------------
-    // REMOVE PREÇOS
+    // REMOVE RETICÊNCIAS
+    //
+    // Exemplo:
+    // "Lustre Diamante..."
+    //
+    // vira:
+    // "Lustre Diamante"
     // ----------------------------------------------------------
 
     resultado = resultado.replaceAll(
-      RegExp(
-        r'R\$\s*\d+(?:[.,]\d{2})?',
-        caseSensitive: false,
-      ),
+      RegExp(r'\.{2,}'),
+      ' ',
+    );
+
+    resultado = resultado.replaceAll(
+      RegExp(r'…+'),
       ' ',
     );
 
     // ----------------------------------------------------------
-    // REMOVE NÚMEROS DE INTERFACE
+    // ESPAÇOS
     // ----------------------------------------------------------
-
-    resultado = resultado.replaceAll(
-      RegExp(
-        r'\b(?:no|nº|n°)\.?\s*\d+\b',
-        caseSensitive: false,
-      ),
-      ' ',
-    );
-
-    // ----------------------------------------------------------
-    // LIMPEZA FINAL
-    // ----------------------------------------------------------
-
-    resultado = resultado.replaceAll(
-      RegExp(r'\.{2,}$'),
-      '',
-    );
 
     resultado = resultado.replaceAll(
       RegExp(r'\s+'),
@@ -326,6 +270,10 @@ class _HomePageState extends State<HomePage> {
     );
 
     resultado = resultado.trim();
+
+    // ----------------------------------------------------------
+    // PONTUAÇÃO ISOLADA
+    // ----------------------------------------------------------
 
     resultado = resultado.replaceAll(
       RegExp(r'^[,;:.\-]+'),
@@ -341,47 +289,45 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // VERIFICAR TEXTO QUE NÃO É NOME
+  // VERIFICAR TEXTO IGNORADO
   // ============================================================
 
   bool _ehTextoIgnorado(String texto) {
-    final t = _normalizarTexto(texto).toLowerCase();
+    final t = texto.toLowerCase().trim();
 
     if (t.isEmpty) {
       return true;
     }
 
-    // Comissão.
-    if (t.contains('comissão') ||
-        t.contains('comissao') ||
-        t.contains('extra')) {
-      return true;
-    }
-
-    // Porcentagem.
+    // Preço
     if (RegExp(
-      r'\d+(?:[.,]\d+)?\s*%',
+      r'(?:r\$|\d{1,3}(?:[.\s]\d{3})*,\d{2})',
       caseSensitive: false,
     ).hasMatch(t)) {
       return true;
     }
 
-    // Preço.
+    // Porcentagem
     if (RegExp(
-      r'r\$\s*\d',
-      caseSensitive: false,
+      r'\d+(?:[.,]\d+)?\s*%',
     ).hasMatch(t)) {
       return true;
     }
 
     final palavras = [
+      'comissão extra',
+      'comissao extra',
+      'comissãoextra',
+      'comissaoextra',
       'shopee',
-      'afiliado',
       'afiliados',
+      'afiliado',
       'promoveram',
       'vendido',
       'vendidos',
       'mais vendidos',
+      'avaliações',
+      'avaliacoes',
       'aprenda com outros criadores',
       'compartilhe',
       'compartilhar',
@@ -393,10 +339,16 @@ class _HomePageState extends State<HomePage> {
       'promocao',
       'frete grátis',
       'frete gratis',
-      'comprar agora',
       'adicionar ao carrinho',
+      'comprar agora',
       'parcelado',
       'entrega',
+      '4.9',
+      '4,9',
+      '4.8',
+      '4,8',
+      '5.0',
+      '5,0',
     ];
 
     for (final palavra in palavras) {
@@ -413,7 +365,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // CORRIGIR NOME
+  // AJUSTAR NOME
   // ============================================================
 
   String _ajustarNomeProduto(String nome) {
@@ -430,14 +382,6 @@ class _HomePageState extends State<HomePage> {
 
     // ----------------------------------------------------------
     // CORES
-    //
-    // Se o OCR colocar "Preto" no começo:
-    //
-    // Preto Kit 2 Pendente Lustre...
-    //
-    // transforma em:
-    //
-    // Kit 2 Pendente Lustre... Preto
     // ----------------------------------------------------------
 
     final cores = [
@@ -470,12 +414,12 @@ class _HomePageState extends State<HomePage> {
       if (cores.contains(primeira)) {
         final resto = palavras.skip(1).join(' ');
 
-        final pareceProduto = RegExp(
-          r'\b(kit|pende[nr]te|lustre|luminária|luminaria|aramado|diamante|mesa|projetor|ventilador|notebook|celular|fone|câmera|camera)\b',
+        final pareceTitulo = RegExp(
+          r'\b(kit|pende[nr]te|lustre|luminária|luminaria|mesa|projetor|ventilador|notebook|celular|fone|câmera|camera)\b',
           caseSensitive: false,
         ).hasMatch(resto);
 
-        if (pareceProduto) {
+        if (pareceTitulo) {
           resultado = '$resto ${palavras.first}';
         }
       }
@@ -485,116 +429,138 @@ class _HomePageState extends State<HomePage> {
     // REMOVE PALAVRA REPETIDA NO FINAL
     // ----------------------------------------------------------
 
-    final lista = resultado.split(' ');
+    final palavrasFinais = resultado.split(' ');
 
-    if (lista.length >= 4) {
-      final ultima = lista.last.toLowerCase();
+    if (palavrasFinais.length >= 4) {
+      final ultima = palavrasFinais.last.toLowerCase();
 
-      for (int i = 0; i < lista.length - 1; i++) {
-        if (lista[i].toLowerCase() == ultima) {
-          lista.removeLast();
-          break;
-        }
+      final apareceuAntes = palavrasFinais
+          .sublist(0, palavrasFinais.length - 1)
+          .map((e) => e.toLowerCase())
+          .contains(ultima);
+
+      if (apareceuAntes) {
+        palavrasFinais.removeLast();
+        resultado = palavrasFinais.join(' ');
       }
-
-      resultado = lista.join(' ');
     }
 
     // ----------------------------------------------------------
-    // LIMPEZA FINAL
+    // LIMPEZA FINAL DAS RETICÊNCIAS
     // ----------------------------------------------------------
 
-    resultado = _limparLinha(resultado);
+    resultado = resultado
+        .replaceAll('...', '')
+        .replaceAll('…', '')
+        .replaceAll(
+          RegExp(r'\s+'),
+          ' ',
+        )
+        .trim();
 
     return resultado;
   }
 
   // ============================================================
-  // ENCONTRAR NOME DO PRODUTO
+  // RECORTAR SOMENTE A ÁREA DA FOTO
   // ============================================================
 
-  String _encontrarNomeProduto(
-    List<_LinhaOCR> linhas,
-    int indicePreco,
-    double parteInferiorPreco,
-  ) {
-    final List<String> partes = [];
+  Future<File?> _recortarAreaDoProduto(
+    String caminho,
+    double parteSuperior,
+    double parteInferior,
+  ) async {
+    try {
+      final File arquivo = File(caminho);
 
-    // ----------------------------------------------------------
-    // O TÍTULO DO PRODUTO FICA ABAIXO DO PREÇO.
-    //
-    // A COMISSÃO EXTRA FICA NA MESMA ALTURA DO PREÇO.
-    //
-    // Portanto não devemos simplesmente pegar todas as linhas
-    // próximas. Primeiro filtramos as linhas abaixo do preço.
-    // ----------------------------------------------------------
+      final Uint8List bytes = await arquivo.readAsBytes();
 
-    for (int i = 0; i < linhas.length; i++) {
-      final linhaOCR = linhas[i];
+      final img.Image? original = img.decodeImage(bytes);
 
-      if (indicePreco >= 0) {
-        if (linhaOCR.caixa.top < parteInferiorPreco - 3) {
-          continue;
-        }
+      if (original == null) {
+        return null;
       }
 
-      final original = linhaOCR.texto.trim();
-
-      if (original.isEmpty) {
-        continue;
-      }
-
-      if (_ehTextoIgnorado(original)) {
-        continue;
-      }
-
-      String linha = _limparLinha(original);
-
-      if (linha.isEmpty) {
-        continue;
-      }
-
-      if (_ehTextoIgnorado(linha)) {
-        continue;
-      }
-
-      // Não aceitar linhas gigantes de interface.
-      if (linha.length > 120) {
-        continue;
-      }
+      final int largura = original.width;
+      final int altura = original.height;
 
       // --------------------------------------------------------
-      // CORREÇÃO ESPECÍFICA PARA O PROBLEMA DA FOTO
+      // A foto do produto fica na parte superior do print.
       //
-      // Se uma linha tiver "COMISSÃO EXTRA" misturado com
-      // palavras do produto, removemos a parte da comissão.
+      // Não removemos o fundo.
+      // Apenas retiramos:
+      // - barra de status;
+      // - preço;
+      // - nome;
+      // - informações da Shopee abaixo.
       // --------------------------------------------------------
 
-      linha = linha.replaceAll(
-        RegExp(
-          r'comiss[aã]o.*?(?=\bkit\b|\bpende[nr]te\b|\blustre\b|\bluminária\b|\bluminaria\b)',
-          caseSensitive: false,
-        ),
-        '',
+      int topo = (altura * 0.035).round();
+
+      int fundo;
+
+      if (parteInferior > 0) {
+        fundo = parteInferior.round() - (altura * 0.015).round();
+      } else {
+        fundo = (altura * 0.55).round();
+      }
+
+      // Limites de segurança.
+      if (topo < 0) {
+        topo = 0;
+      }
+
+      if (fundo > altura) {
+        fundo = altura;
+      }
+
+      if (fundo <= topo) {
+        fundo = (altura * 0.55).round();
+      }
+
+      // Pequena margem lateral para retirar elementos externos.
+      final int margemX = (largura * 0.035).round();
+
+      int esquerda = margemX;
+      int direita = largura - margemX;
+
+      if (esquerda < 0) {
+        esquerda = 0;
+      }
+
+      if (direita > largura) {
+        direita = largura;
+      }
+
+      final int novaLargura = direita - esquerda;
+      final int novaAltura = fundo - topo;
+
+      if (novaLargura <= 0 || novaAltura <= 0) {
+        return null;
+      }
+
+      final img.Image recortada = img.copyCrop(
+        original,
+        x: esquerda,
+        y: topo,
+        width: novaLargura,
+        height: novaAltura,
       );
 
-      linha = _limparLinha(linha);
+      final Uint8List resultadoBytes =
+          Uint8List.fromList(img.encodeJpg(recortada, quality: 95));
 
-      if (linha.isEmpty) {
-        continue;
-      }
+      final String novoCaminho =
+          '${arquivo.parent.path}/produto_recortado_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-      partes.add(linha);
+      final File novoArquivo = File(novoCaminho);
 
-      // Normalmente o título ocupa no máximo 3 ou 4 linhas.
-      if (partes.length >= 4) {
-        break;
-      }
+      await novoArquivo.writeAsBytes(resultadoBytes);
+
+      return novoArquivo;
+    } catch (e) {
+      return null;
     }
-
-    String nome = partes.join(' ');
-
-    return _ajustarNomeProduto(nome);
   }
 
   // ============================================================
@@ -633,20 +599,24 @@ class _HomePageState extends State<HomePage> {
         }
       }
 
-      // Ordenar de cima para baixo.
-      linhas.sort((a, b) {
-        final y = a.caixa.top.compareTo(b.caixa.top);
+      // --------------------------------------------------------
+      // ORDENA AS LINHAS
+      // --------------------------------------------------------
 
-        if (y != 0) {
-          return y;
+      linhas.sort((a, b) {
+        final diferencaY =
+            a.caixa.top.compareTo(b.caixa.top);
+
+        if (diferencaY != 0) {
+          return diferencaY;
         }
 
         return a.caixa.left.compareTo(b.caixa.left);
       });
 
-      // ========================================================
+      // --------------------------------------------------------
       // PREÇO
-      // ========================================================
+      // --------------------------------------------------------
 
       final RegExp regexPreco = RegExp(
         r'(?:R\$\s*)?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})',
@@ -654,50 +624,86 @@ class _HomePageState extends State<HomePage> {
       );
 
       String preco = '';
-      int indicePreco = -1;
+
+      int indiceLinhaPreco = -1;
+
       double parteInferiorPreco = 0;
 
       for (int i = 0; i < linhas.length; i++) {
-        final texto = linhas[i].texto;
+        final linha = linhas[i].texto;
 
-        final match = regexPreco.firstMatch(texto);
+        final match = regexPreco.firstMatch(linha);
 
         if (match != null) {
           preco = match.group(0) ?? '';
 
           if (preco.isNotEmpty) {
-            indicePreco = i;
-            parteInferiorPreco = linhas[i].caixa.bottom;
+            indiceLinhaPreco = i;
+            parteInferiorPreco =
+                linhas[i].caixa.bottom;
             break;
           }
         }
       }
 
-      // ========================================================
-      // NOME
-      // ========================================================
+      // --------------------------------------------------------
+      // NOME DO PRODUTO
+      // --------------------------------------------------------
 
-      String nome = _encontrarNomeProduto(
-        linhas,
-        indicePreco,
-        parteInferiorPreco,
-      );
+      final List<String> partesNome = [];
 
-      // ========================================================
-      // FALLBACK
-      // ========================================================
+      if (indiceLinhaPreco >= 0) {
+        for (int i = 0; i < linhas.length; i++) {
+          final linhaOCR = linhas[i];
 
-      if (nome.isEmpty) {
-        final List<String> fallback = [];
+          // O título precisa estar abaixo do preço.
+          if (linhaOCR.caixa.top <
+              parteInferiorPreco - 5) {
+            continue;
+          }
 
-        for (final linhaOCR in linhas) {
+          String linha =
+              _limparLinha(linhaOCR.texto);
+
+          if (linha.isEmpty) {
+            continue;
+          }
+
           if (_ehTextoIgnorado(linhaOCR.texto)) {
             continue;
           }
 
-          final linha = _limparLinha(linhaOCR.texto);
+          if (_ehTextoIgnorado(linha)) {
+            continue;
+          }
+
+          if (partesNome.length >= 4) {
+            break;
+          }
+
+          if (linha.length < 3 ||
+              linha.length > 120) {
+            continue;
+          }
+
+          partesNome.add(linha);
+        }
+      }
+
+      // --------------------------------------------------------
+      // FALLBACK
+      // --------------------------------------------------------
+
+      if (partesNome.isEmpty) {
+        for (final linhaOCR in linhas) {
+          String linha =
+              _limparLinha(linhaOCR.texto);
 
           if (linha.isEmpty) {
+            continue;
+          }
+
+          if (_ehTextoIgnorado(linhaOCR.texto)) {
             continue;
           }
 
@@ -709,60 +715,63 @@ class _HomePageState extends State<HomePage> {
             continue;
           }
 
-          fallback.add(linha);
+          partesNome.add(linha);
 
-          if (fallback.length >= 3) {
+          if (partesNome.length >= 3) {
             break;
           }
         }
-
-        nome = _ajustarNomeProduto(
-          fallback.join(' '),
-        );
       }
 
-      // ========================================================
-      // LIMPEZA ESPECIAL FINAL
-      // ========================================================
+      // --------------------------------------------------------
+      // MONTA NOME
+      // --------------------------------------------------------
 
-      nome = nome.replaceAll(
-        RegExp(
-          r'comiss[aã]o\s*ex\s*tra',
-          caseSensitive: false,
-        ),
-        '',
-      );
-
-      nome = nome.replaceAll(
-        RegExp(
-          r'comiss[aã]oextra',
-          caseSensitive: false,
-        ),
-        '',
-      );
-
-      nome = nome.replaceAll(
-        RegExp(
-          r'\d{1,3}(?:[.,]\d+)?\s*%',
-          caseSensitive: false,
-        ),
-        '',
-      );
+      String nome = partesNome.join(' ');
 
       nome = _ajustarNomeProduto(nome);
 
-      // ========================================================
-      // LIMITE
-      // ========================================================
+      // Última limpeza.
+      nome = _limparLinha(nome);
+
+      // --------------------------------------------------------
+      // LIMITADOR
+      // --------------------------------------------------------
 
       if (nome.length > 180) {
         nome = nome.substring(0, 180).trim();
 
-        final ultimoEspaco = nome.lastIndexOf(' ');
+        final ultimoEspaco =
+            nome.lastIndexOf(' ');
 
         if (ultimoEspaco > 20) {
-          nome = nome.substring(0, ultimoEspaco).trim();
+          nome = nome.substring(
+            0,
+            ultimoEspaco,
+          ).trim();
         }
+      }
+
+      // --------------------------------------------------------
+      // RECORTA A FOTO
+      // --------------------------------------------------------
+
+      File? fotoRecortada;
+
+      if (parteInferiorPreco > 0) {
+        fotoRecortada =
+            await _recortarAreaDoProduto(
+          caminho,
+          0,
+          parteInferiorPreco,
+        );
+      } else {
+        fotoRecortada =
+            await _recortarAreaDoProduto(
+          caminho,
+          0,
+          0,
+        );
       }
 
       if (!mounted) {
@@ -773,6 +782,7 @@ class _HomePageState extends State<HomePage> {
         _textoLido = textoCompleto;
         _nomeProduto = nome;
         _preco = preco;
+        _imagemRecortada = fotoRecortada;
         _carregando = false;
       });
     } catch (e) {
@@ -797,7 +807,8 @@ class _HomePageState extends State<HomePage> {
   // ============================================================
 
   String _obterLink() {
-    String link = _linkController.text.trim();
+    String link =
+        _linkController.text.trim();
 
     if (link.isEmpty) {
       return '';
@@ -816,13 +827,15 @@ class _HomePageState extends State<HomePage> {
   // ============================================================
 
   String _gerarTextoDivulgacao() {
-    final String nome = _nomeProduto.isEmpty
-        ? 'Produto Shopee'
-        : _nomeProduto;
+    final String nome =
+        _nomeProduto.isEmpty
+            ? 'Produto Shopee'
+            : _nomeProduto;
 
-    final String preco = _preco.isEmpty
-        ? 'Confira o preço'
-        : _preco;
+    final String preco =
+        _preco.isEmpty
+            ? 'Confira o preço'
+            : _preco;
 
     final String link = _obterLink();
 
@@ -841,7 +854,7 @@ $link
   }
 
   // ============================================================
-  // COMPARTILHAR FOTO
+  // COMPARTILHAR FOTO + TEXTO
   // ============================================================
 
   Future<void> _compartilharFoto() async {
@@ -854,22 +867,30 @@ $link
       return;
     }
 
-    if (_imagem == null) {
+    if (_imagemOriginal == null) {
       _mostrarMensagem(
         'Escolha o print do produto primeiro.',
       );
       return;
     }
 
-    final String texto = _gerarTextoDivulgacao();
+    final String texto =
+        _gerarTextoDivulgacao();
 
     try {
+      final File arquivoParaCompartilhar =
+          _imagemRecortada ??
+              _imagemOriginal!;
+
       await SharePlus.instance.share(
         ShareParams(
           text: texto,
-          subject: 'Oferta Shopee - $_nomeProduto',
+          subject:
+              'Oferta Shopee - $_nomeProduto',
           files: [
-            XFile(_imagem!.path),
+            XFile(
+              arquivoParaCompartilhar.path,
+            ),
           ],
         ),
       );
@@ -883,7 +904,7 @@ $link
   }
 
   // ============================================================
-  // COMPARTILHAR TEXTO
+  // COMPARTILHAR SOMENTE TEXTO
   // ============================================================
 
   Future<void> _compartilharTexto() async {
@@ -896,7 +917,8 @@ $link
       return;
     }
 
-    final String texto = _gerarTextoDivulgacao();
+    final String texto =
+        _gerarTextoDivulgacao();
 
     try {
       await SharePlus.instance.share(
@@ -917,33 +939,46 @@ $link
   // MENSAGEM
   // ============================================================
 
-  void _mostrarMensagem(String mensagem) {
+  void _mostrarMensagem(
+    String mensagem,
+  ) {
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    ScaffoldMessenger.of(context)
+        .showSnackBar(
       SnackBar(
         content: Text(mensagem),
-        duration: const Duration(seconds: 4),
+        duration:
+            const Duration(seconds: 4),
       ),
     );
   }
 
   // ============================================================
-  // CAMPO LINK
+  // CAMPO DE LINK
   // ============================================================
 
   Widget _campoLink() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding:
+          const EdgeInsets.symmetric(
+        horizontal: 16,
+      ),
       child: TextField(
         controller: _linkController,
-        keyboardType: TextInputType.url,
+        keyboardType:
+            TextInputType.url,
         decoration: InputDecoration(
-          labelText: 'Link de afiliado Shopee',
-          hintText: 'Cole seu link aqui',
-          prefixIcon: const Icon(Icons.link),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+          labelText:
+              'Link de afiliado Shopee',
+          hintText:
+              'Cole seu link aqui',
+          prefixIcon:
+              const Icon(Icons.link),
+          border:
+              OutlineInputBorder(
+            borderRadius:
+                BorderRadius.circular(14),
           ),
           filled: true,
           fillColor: Colors.white,
@@ -953,34 +988,103 @@ $link
   }
 
   // ============================================================
-  // CARD INFORMAÇÕES
+  // CARD DA FOTO
+  // ============================================================
+
+  Widget _cardFoto() {
+    if (_imagemRecortada == null &&
+        _imagemOriginal == null) {
+      return const SizedBox.shrink();
+    }
+
+    final File imagem =
+        _imagemRecortada ??
+            _imagemOriginal!;
+
+    return Container(
+      margin:
+          const EdgeInsets.fromLTRB(
+        16,
+        18,
+        16,
+        0,
+      ),
+      padding:
+          const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius:
+            BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black
+                .withOpacity(0.18),
+            blurRadius: 5,
+            offset:
+                const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius:
+            BorderRadius.circular(16),
+        child: Image.file(
+          imagem,
+          width: double.infinity,
+          fit: BoxFit.contain,
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // CARD DAS INFORMAÇÕES
   // ============================================================
 
   Widget _cardInformacoes() {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-      padding: const EdgeInsets.fromLTRB(32, 28, 32, 28),
+      margin:
+          const EdgeInsets.fromLTRB(
+        16,
+        18,
+        16,
+        0,
+      ),
+      padding:
+          const EdgeInsets.fromLTRB(
+        32,
+        28,
+        32,
+        28,
+      ),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF1EC),
-        borderRadius: BorderRadius.circular(22),
+        color:
+            const Color(0xFFFFF1EC),
+        borderRadius:
+            BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.18),
+            color: Colors.black
+                .withOpacity(0.18),
             blurRadius: 5,
-            offset: const Offset(0, 3),
+            offset:
+                const Offset(0, 3),
           ),
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
         children: [
           Text(
             'INFORMAÇÕES ENCONTRADAS',
             style: TextStyle(
               fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey.shade500,
+              fontWeight:
+                  FontWeight.bold,
+              color:
+                  Colors.grey.shade500,
             ),
           ),
 
@@ -990,8 +1094,10 @@ $link
             'NOME DO PRODUTO',
             style: TextStyle(
               fontSize: 19,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey.shade500,
+              fontWeight:
+                  FontWeight.bold,
+              color:
+                  Colors.grey.shade500,
             ),
           ),
 
@@ -1001,33 +1107,41 @@ $link
             _nomeProduto.isEmpty
                 ? 'Produto não identificado'
                 : _nomeProduto,
-            style: const TextStyle(
+            style:
+                const TextStyle(
               fontSize: 28,
               height: 1.35,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF222222),
+              fontWeight:
+                  FontWeight.bold,
             ),
           ),
 
-          const SizedBox(height: 30),
+          const SizedBox(height: 28),
 
           Text(
             'PREÇO',
             style: TextStyle(
               fontSize: 19,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey.shade500,
+              fontWeight:
+                  FontWeight.bold,
+              color:
+                  Colors.grey.shade500,
             ),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
 
           Text(
-            _preco.isEmpty ? 'Preço não identificado' : _preco,
-            style: const TextStyle(
+            _preco.isEmpty
+                ? 'Preço não identificado'
+                : _preco,
+            style:
+                const TextStyle(
               fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFFFF4F20),
+              fontWeight:
+                  FontWeight.bold,
+              color:
+                  Colors.deepOrange,
             ),
           ),
         ],
@@ -1036,155 +1150,110 @@ $link
   }
 
   // ============================================================
-  // BOTÃO ESCOLHER PRINT
+  // BOTÃO LIMPAR
   // ============================================================
 
-  Widget _botaoEscolher() {
+  Widget _botaoLimpar() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(24),
-        onTap: _carregando ? null : _escolherPrint,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 28,
-          ),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF0EB),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.10),
-                blurRadius: 5,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.image_outlined,
-                size: 28,
-                color: Color(0xFF8A4A3A),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  _carregando
-                      ? 'LENDO PRODUTO...'
-                      : 'ESCOLHER FOTO / PRINT DO PRODUTO',
-                  style: const TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF8A4A3A),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+      padding:
+          const EdgeInsets.fromLTRB(
+        16,
+        18,
+        16,
+        0,
       ),
-    );
-  }
-
-  // ============================================================
-  // IMAGEM
-  // ============================================================
-
-  Widget _imagemProduto() {
-    if (_imagem == null) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.15),
-            blurRadius: 5,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Image.file(
-        _imagem!,
+      child: SizedBox(
         width: double.infinity,
-        fit: BoxFit.contain,
-      ),
-    );
-  }
-
-  // ============================================================
-  // TEXTO OCR
-  // ============================================================
-
-  Widget _textoDetectado() {
-    if (_textoLido.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return ExpansionTile(
-      title: const Text(
-        'Ver texto detectado no print',
-        style: TextStyle(
-          fontSize: 18,
-        ),
-      ),
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: SelectableText(
-            _textoLido,
-            style: const TextStyle(
-              fontSize: 15,
-              height: 1.4,
+        height: 56,
+        child: OutlinedButton.icon(
+          onPressed:
+              _carregando
+                  ? null
+                  : _limparTudo,
+          icon:
+              const Icon(
+            Icons.delete_outline,
+          ),
+          label:
+              const Text(
+            'LIMPAR TUDO',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight:
+                  FontWeight.bold,
+            ),
+          ),
+          style:
+              OutlinedButton.styleFrom(
+            foregroundColor:
+                Colors.deepOrange,
+            side:
+                const BorderSide(
+              color:
+                  Colors.deepOrange,
+              width: 1.5,
+            ),
+            shape:
+                RoundedRectangleBorder(
+              borderRadius:
+                  BorderRadius.circular(
+                16,
+              ),
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 
   // ============================================================
-  // BOTÕES
+  // BOTÕES DE COMPARTILHAMENTO
   // ============================================================
 
   Widget _botoesCompartilhar() {
-    if (_imagem == null) {
-      return const SizedBox.shrink();
-    }
-
     return Padding(
-      padding: const EdgeInsets.fromLTRB(30, 20, 30, 30),
+      padding:
+          const EdgeInsets.fromLTRB(
+        16,
+        18,
+        16,
+        30,
+      ),
       child: Column(
         children: [
           SizedBox(
             width: double.infinity,
-            height: 62,
+            height: 58,
             child: ElevatedButton.icon(
-              onPressed: _compartilharFoto,
-              icon: const Icon(
+              onPressed:
+                  _carregando
+                      ? null
+                      : _compartilharFoto,
+              icon:
+                  const Icon(
                 Icons.image,
-                color: Colors.white,
               ),
-              label: const Text(
+              label:
+                  const Text(
                 'COMPARTILHAR FOTO + DIVULGAÇÃO',
                 style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  fontWeight:
+                      FontWeight.bold,
                 ),
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFF4F20),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
+              style:
+                  ElevatedButton.styleFrom(
+                backgroundColor:
+                    Colors.deepOrange,
+                foregroundColor:
+                    Colors.white,
+                shape:
+                    RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius.circular(
+                    18,
+                  ),
                 ),
               ),
             ),
@@ -1194,25 +1263,40 @@ $link
 
           SizedBox(
             width: double.infinity,
-            height: 55,
+            height: 52,
             child: OutlinedButton.icon(
-              onPressed: _compartilharTexto,
-              icon: const Icon(Icons.share),
-              label: const Text(
+              onPressed:
+                  _carregando
+                      ? null
+                      : _compartilharTexto,
+              icon:
+                  const Icon(
+                Icons.share,
+              ),
+              label:
+                  const Text(
                 'COMPARTILHAR SOMENTE TEXTO',
                 style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  fontWeight:
+                      FontWeight.bold,
                 ),
               ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFFFF4F20),
-                side: const BorderSide(
-                  color: Color(0xFFFF4F20),
-                  width: 2,
+              style:
+                  OutlinedButton.styleFrom(
+                foregroundColor:
+                    Colors.deepOrange,
+                side:
+                    const BorderSide(
+                  color:
+                      Colors.deepOrange,
                 ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
+                shape:
+                    RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius.circular(
+                    16,
+                  ),
                 ),
               ),
             ),
@@ -1227,17 +1311,23 @@ $link
   // ============================================================
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFFFF4F20),
-        foregroundColor: Colors.white,
+        backgroundColor:
+            Colors.deepOrange,
+        foregroundColor:
+            Colors.white,
         centerTitle: true,
-        title: const Text(
+        title:
+            const Text(
           'Divulgador Shopee',
           style: TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
+            fontSize: 30,
+            fontWeight:
+                FontWeight.bold,
           ),
         ),
       ),
@@ -1246,37 +1336,119 @@ $link
         child: SingleChildScrollView(
           child: Column(
             children: [
-              const SizedBox(height: 28),
+              const SizedBox(height: 30),
 
               _campoLink(),
 
-              const SizedBox(height: 26),
+              const SizedBox(height: 24),
 
-              _botaoEscolher(),
-
-              if (_imagem == null)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(35, 180, 35, 40),
-                  child: Text(
-                    'O aplicativo tenta separar somente o produto,\n'
-                    'remove textos como COMISSÃO EXTRA do nome e\n'
-                    'cria uma nova imagem com o nome na faixa verde.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 18,
-                      height: 1.5,
-                      color: Colors.grey,
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(
+                  horizontal: 16,
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 120,
+                  child:
+                      ElevatedButton.icon(
+                    onPressed:
+                        _carregando
+                            ? null
+                            : _escolherPrint,
+                    icon:
+                        const Icon(
+                      Icons.image_outlined,
+                      size: 30,
+                    ),
+                    label:
+                        const Text(
+                      'ESCOLHER FOTO / PRINT DO PRODUTO',
+                      textAlign:
+                          TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight:
+                            FontWeight.bold,
+                      ),
+                    ),
+                    style:
+                        ElevatedButton.styleFrom(
+                      backgroundColor:
+                          const Color(
+                        0xFFFFEEE8,
+                      ),
+                      foregroundColor:
+                          const Color(
+                        0xFF8D4A39,
+                      ),
+                      elevation: 0,
+                      shape:
+                          RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(
+                          22,
+                        ),
+                      ),
                     ),
                   ),
                 ),
+              ),
 
-              _imagemProduto(),
+              if (_carregando)
+                const Padding(
+                  padding:
+                      EdgeInsets.all(30),
+                  child:
+                      CircularProgressIndicator(),
+                ),
 
-              if (_imagem != null) _cardInformacoes(),
+              if (!_carregando &&
+                  (_imagemOriginal != null ||
+                      _imagemRecortada != null))
+                _cardFoto(),
 
-              _textoDetectado(),
+              if (!_carregando &&
+                  (_imagemOriginal != null ||
+                      _imagemRecortada != null))
+                _cardInformacoes(),
 
-              _botoesCompartilhar(),
+              if (!_carregando &&
+                  (_imagemOriginal != null ||
+                      _imagemRecortada != null))
+                _botaoLimpar(),
+
+              if (!_carregando &&
+                  (_imagemOriginal != null ||
+                      _imagemRecortada != null))
+                _botoesCompartilhar(),
+
+              if (_imagemOriginal == null &&
+                  !_carregando)
+                const Padding(
+                  padding:
+                      EdgeInsets.fromLTRB(
+                    40,
+                    50,
+                    40,
+                    20,
+                  ),
+                  child:
+                      Text(
+                    'O aplicativo tenta separar somente o produto, '
+                    'mantém o fundo original da foto, remove textos '
+                    'como COMISSÃO EXTRA do nome e cria uma nova '
+                    'imagem com o produto recortado.',
+                    textAlign:
+                        TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 19,
+                      height: 1.5,
+                      color:
+                          Colors.grey,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
