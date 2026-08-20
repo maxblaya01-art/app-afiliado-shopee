@@ -48,8 +48,7 @@ class _LinhaOCR {
 
 class _HomePageState extends State<HomePage> {
   final ImagePicker _picker = ImagePicker();
-  final TextEditingController _linkController =
-      TextEditingController();
+  final TextEditingController _linkController = TextEditingController();
 
   File? _imagemOriginal;
   File? _imagemRecortada;
@@ -77,9 +76,7 @@ class _HomePageState extends State<HomePage> {
         imageQuality: 100,
       );
 
-      if (arquivo == null) {
-        return;
-      }
+      if (arquivo == null) return;
 
       setState(() {
         _imagemOriginal = File(arquivo.path);
@@ -98,14 +95,12 @@ class _HomePageState extends State<HomePage> {
         _carregando = false;
       });
 
-      _mostrarMensagem(
-        'Erro ao abrir a imagem.\n\n$e',
-      );
+      _mostrarMensagem('Erro ao abrir imagem.');
     }
   }
 
   // ============================================================
-  // LIMPAR TUDO
+  // LIMPAR
   // ============================================================
 
   void _limparTudo() {
@@ -119,28 +114,34 @@ class _HomePageState extends State<HomePage> {
       _carregando = false;
     });
 
-    _mostrarMensagem(
-      'Tudo limpo.',
-    );
+    _mostrarMensagem('Tudo limpo.');
   }
 
   // ============================================================
-  // LIMPAR LINHA OCR
+  // LIMPEZA DE TEXTO DO OCR
   // ============================================================
 
   String _limparLinha(String texto) {
     String t = texto.trim();
 
     // ----------------------------------------------------------
-    // REMOVE COMISSÃO EXTRA
+    // REMOVE "COMISSÃO EXTRA" EM DIVERSOS FORMATOS
     // ----------------------------------------------------------
 
     t = t.replaceAll(
       RegExp(
-        r'comiss[aã]o\s*ex\s*tra',
+        r'comiss[aã]o\s*e\s*x\s*t\s*r\s*a',
         caseSensitive: false,
       ),
-      ' ',
+      '',
+    );
+
+    t = t.replaceAll(
+      RegExp(
+        r'comiss[aã]o\s*extra',
+        caseSensitive: false,
+      ),
+      '',
     );
 
     t = t.replaceAll(
@@ -148,11 +149,11 @@ class _HomePageState extends State<HomePage> {
         r'comiss[aã]oextra',
         caseSensitive: false,
       ),
-      ' ',
+      '',
     );
 
     // ----------------------------------------------------------
-    // REMOVE PORCENTAGENS
+    // REMOVE PERCENTUAIS
     // ----------------------------------------------------------
 
     t = t.replaceAll(
@@ -160,7 +161,7 @@ class _HomePageState extends State<HomePage> {
         r'\b\d{1,3}(?:[.,]\d+)?\s*%',
         caseSensitive: false,
       ),
-      ' ',
+      '',
     );
 
     // ----------------------------------------------------------
@@ -169,63 +170,23 @@ class _HomePageState extends State<HomePage> {
 
     t = t.replaceAll(
       RegExp(
-        r'https?://\S+',
+        r'https?:\/\/\S+',
         caseSensitive: false,
       ),
-      ' ',
+      '',
     );
 
     // ----------------------------------------------------------
-    // REMOVE RETICÊNCIAS
+    // REMOVE PONTOS EXCESSIVOS
     // ----------------------------------------------------------
 
     t = t.replaceAll(
       RegExp(r'\.{2,}|…+'),
-      ' ',
+      '',
     );
 
     // ----------------------------------------------------------
-    // REMOVE ALGUNS TEXTOS DE INTERFACE
-    // ----------------------------------------------------------
-
-    final palavrasRemover = [
-      'aprenda com outros criadores',
-      'compartilhe para ganhar',
-      'compartilhar',
-      'compartilhe',
-      'favorito',
-      'chat',
-      'afiliados promoveram',
-      'afiliados',
-      'afiliado',
-      'promoveram',
-      'vendido',
-      'vendidos',
-      'avaliações',
-      'avaliacoes',
-      'cupom',
-      'frete grátis',
-      'frete gratis',
-      'comprar agora',
-      'adicionar ao carrinho',
-      'parcelado',
-      'entrega',
-      'confira aqui',
-      'aproveite a oferta',
-    ];
-
-    for (final palavra in palavrasRemover) {
-      t = t.replaceAll(
-        RegExp(
-          RegExp.escape(palavra),
-          caseSensitive: false,
-        ),
-        ' ',
-      );
-    }
-
-    // ----------------------------------------------------------
-    // ESPAÇOS
+    // CORRIGE ESPAÇOS
     // ----------------------------------------------------------
 
     t = t.replaceAll(
@@ -237,43 +198,73 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // VERIFICAR TEXTO DE INTERFACE
+  // IDENTIFICA TEXTOS DA INTERFACE DA SHOPEE
   // ============================================================
 
   bool _ehInterface(String texto) {
     final t = texto.toLowerCase().trim();
-
-    if (t.isEmpty) {
-      return true;
-    }
 
     final termos = [
       'comissão extra',
       'comissao extra',
       'comissãoextra',
       'comissaoextra',
+
+      'comissão',
+      'comissao',
+
       'afiliados',
       'afiliado',
+
       'promoveram',
+
       'aprenda com outros criadores',
-      'compartilhe para ganhar',
-      'compartilhar',
+
       'compartilhe',
-      'favorito',
+      'compartilhar',
+
       'chat',
+
+      'favorito',
+      'favoritar',
+
       'vendido',
       'vendidos',
+
       'avaliações',
       'avaliacoes',
+
+      'estrelas',
+
+      'oferta',
+
       'cupom',
+
       'frete grátis',
       'frete gratis',
+
       'comprar agora',
+
       'adicionar ao carrinho',
+
       'entrega',
+
       'parcelado',
+
       'visitar',
+
+      'loja',
+
       'mais vendidos',
+
+      'android 13.0',
+
+      'auto-focus',
+      'autofocus',
+
+      'wifi 6',
+
+      'max support',
     ];
 
     for (final termo in termos) {
@@ -282,34 +273,13 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    // ----------------------------------------------------------
-    // PORCENTAGEM
-    // ----------------------------------------------------------
-
-    if (RegExp(
-      r'\d+(?:[.,]\d+)?\s*%',
-      caseSensitive: false,
-    ).hasMatch(t)) {
+    // Horário do celular
+    if (RegExp(r'^\d{1,2}:\d{2}$').hasMatch(t)) {
       return true;
     }
 
-    // ----------------------------------------------------------
-    // HORÁRIO DO CELULAR
-    // ----------------------------------------------------------
-
-    if (RegExp(
-      r'^\d{1,2}:\d{2}$',
-    ).hasMatch(t)) {
-      return true;
-    }
-
-    // ----------------------------------------------------------
-    // SOMENTE NÚMEROS
-    // ----------------------------------------------------------
-
-    if (RegExp(
-      r'^[\d\s.,/%\-]+$',
-    ).hasMatch(t)) {
+    // Linhas contendo somente números, porcentagens etc.
+    if (RegExp(r'^[\d\s.,/%]+$').hasMatch(t)) {
       return true;
     }
 
@@ -317,7 +287,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // NORMALIZAR PREÇO
+  // PREÇO
   // ============================================================
 
   String _normalizarPreco(String preco) {
@@ -340,109 +310,78 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // EXTRAIR PREÇO DE UMA LINHA
-  // ============================================================
-
-  String _extrairPreco(String texto) {
-    final RegExp regexPreco = RegExp(
-      r'(?:R\$\s*)?\d{1,3}(?:[.\s]\d{3})*,\d{2}',
-      caseSensitive: false,
-    );
-
-    final Match? match =
-        regexPreco.firstMatch(texto);
-
-    if (match == null) {
-      return '';
-    }
-
-    final String valor =
-        match.group(0) ?? '';
-
-    if (valor.isEmpty) {
-      return '';
-    }
-
-    return _normalizarPreco(valor);
-  }
-
-  // ============================================================
-  // REMOVER PREÇO DA LINHA
-  //
-  // EXEMPLO:
-  //
-  // R$397,00 Projetor VEVSHAO A12
-  //
-  // vira:
-  //
-  // Projetor VEVSHAO A12
-  // ============================================================
-
-  String _removerPrecoDaLinha(String texto) {
-    String resultado = texto;
-
-    final RegExp regexPreco = RegExp(
-      r'(?:R\$\s*)?\d{1,3}(?:[.\s]\d{3})*,\d{2}',
-      caseSensitive: false,
-    );
-
-    resultado = resultado.replaceAll(
-      regexPreco,
-      ' ',
-    );
-
-    resultado = resultado.replaceAll(
-      RegExp(r'\s+'),
-      ' ',
-    );
-
-    return resultado.trim();
-  }
-
-  // ============================================================
-  // AJUSTAR NOME
+  // AJUSTAR NOME DO PRODUTO
   // ============================================================
 
   String _ajustarNomeProduto(String nome) {
-    String n = _limparLinha(nome);
+    String n = nome;
+
+    // Limpeza geral
+    n = _limparLinha(n);
 
     // ----------------------------------------------------------
-    // REMOVE QUALQUER PREÇO QUE TENHA SOBRADO
-    // ----------------------------------------------------------
-
-    n = _removerPrecoDaLinha(n);
-
-    // ----------------------------------------------------------
-    // REMOVE COMISSÃO EXTRA NOVAMENTE
+    // PROTEÇÃO EXTRA CONTRA COMISSÃO EXTRA
     // ----------------------------------------------------------
 
     n = n.replaceAll(
       RegExp(
-        r'comiss[aã]o\s*ex\s*tra',
+        r'comiss[aã]o\s*e\s*x\s*t\s*r\s*a',
         caseSensitive: false,
       ),
-      ' ',
+      '',
     );
+
+    n = n.replaceAll(
+      RegExp(
+        r'comiss[aã]o\s*extra',
+        caseSensitive: false,
+      ),
+      '',
+    );
+
+    n = n.replaceAll(
+      RegExp(
+        r'comiss[aã]oextra',
+        caseSensitive: false,
+      ),
+      '',
+    );
+
+    // ----------------------------------------------------------
+    // REMOVE PREÇO CASO TENHA ENTRADO NO NOME
+    // ----------------------------------------------------------
+
+    n = n.replaceAll(
+      RegExp(
+        r'(?:R\$\s*)?\d{1,3}(?:\.\d{3})*,\d{2}',
+        caseSensitive: false,
+      ),
+      '',
+    );
+
+    // ----------------------------------------------------------
+    // REMOVE PERCENTUAIS
+    // ----------------------------------------------------------
 
     n = n.replaceAll(
       RegExp(
         r'\b\d{1,3}(?:[.,]\d+)?\s*%',
         caseSensitive: false,
       ),
-      ' ',
+      '',
     );
 
     // ----------------------------------------------------------
-    // REMOVE RETICÊNCIAS
+    // REMOVE CARACTERES DESNECESSÁRIOS DO COMEÇO
     // ----------------------------------------------------------
 
-    n = n.replaceAll(
-      RegExp(r'\.{2,}|…+'),
-      ' ',
+    n = n.replaceFirst(
+      RegExp(r'^[\s\-:|]+'),
+      '',
     );
 
     // ----------------------------------------------------------
-    // ESPAÇOS
+    // CORRIGE ESPAÇOS
     // ----------------------------------------------------------
 
     n = n.replaceAll(
@@ -453,16 +392,15 @@ class _HomePageState extends State<HomePage> {
     n = n.trim();
 
     // ----------------------------------------------------------
-    // LIMITE
+    // LIMITA TAMANHO DO NOME
     // ----------------------------------------------------------
 
     if (n.length > 170) {
       n = n.substring(0, 170);
 
-      final int pos =
-          n.lastIndexOf(' ');
+      final pos = n.lastIndexOf(' ');
 
-      if (pos > 20) {
+      if (pos > 0) {
         n = n.substring(0, pos);
       }
     }
@@ -471,18 +409,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // RECORTAR FOTO
-  //
-  // NÃO REMOVE O FUNDO.
-  // Apenas recorta a área da foto do produto.
+  // RECORTAR FOTO DO PRODUTO
   // ============================================================
 
-  Future<File?> _recortarAreaDoProduto(
-    String caminho,
-  ) async {
+  Future<File?> _recortarAreaDoProduto(String caminho) async {
     try {
-      final File arquivo =
-          File(caminho);
+      final arquivo = File(caminho);
 
       final Uint8List bytes =
           await arquivo.readAsBytes();
@@ -494,25 +426,25 @@ class _HomePageState extends State<HomePage> {
         return null;
       }
 
-      final int largura =
-          original.width;
+      final largura = original.width;
+      final altura = original.height;
 
-      final int altura =
-          original.height;
-
-      final int topo =
+      // Remove pequena parte superior do print
+      final topo =
           (altura * 0.045).round();
 
-      final int fundo =
+      // Área principal da foto do produto
+      final fundo =
           (altura * 0.435).round();
 
-      final int margem =
+      // Margem lateral
+      final margem =
           (largura * 0.025).round();
 
-      final int larguraRecorte =
-          largura - margem * 2;
+      final larguraRecorte =
+          largura - (margem * 2);
 
-      final int alturaRecorte =
+      final alturaRecorte =
           fundo - topo;
 
       if (larguraRecorte <= 0 ||
@@ -520,8 +452,7 @@ class _HomePageState extends State<HomePage> {
         return null;
       }
 
-      final img.Image recorte =
-          img.copyCrop(
+      final recorte = img.copyCrop(
         original,
         x: margem,
         y: topo,
@@ -529,11 +460,10 @@ class _HomePageState extends State<HomePage> {
         height: alturaRecorte,
       );
 
-      final String novoCaminho =
+      final novo =
           '${arquivo.parent.path}/produto_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-      final File resultado =
-          File(novoCaminho);
+      final resultado = File(novo);
 
       await resultado.writeAsBytes(
         Uint8List.fromList(
@@ -551,376 +481,250 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // OCR PRINCIPAL
+  // LER TEXTO DA IMAGEM
   // ============================================================
 
   Future<void> _lerTextoDaImagem(
     String caminho,
   ) async {
-    final TextRecognizer reconhecedor =
+    final reconhecedor =
         TextRecognizer(
       script: TextRecognitionScript.latin,
     );
 
     try {
-      final InputImage imagem =
-          InputImage.fromFilePath(
-        caminho,
-      );
+      final imagem =
+          InputImage.fromFilePath(caminho);
 
-      final RecognizedText resultado =
+      final resultado =
           await reconhecedor.processImage(
         imagem,
       );
 
-      final List<_LinhaOCR> linhas =
-          [];
+      final linhas = <_LinhaOCR>[];
 
       // --------------------------------------------------------
-      // PEGAR TODAS AS LINHAS
+      // ORGANIZA TODAS AS LINHAS DO OCR
       // --------------------------------------------------------
 
-      for (final bloco
-          in resultado.blocks) {
-        for (final linha
-            in bloco.lines) {
-          final String texto =
-              linha.text.trim();
+      for (final bloco in resultado.blocks) {
+        for (final linha in bloco.lines) {
+          if (linha.text.trim().isNotEmpty) {
+            linhas.add(
+              _LinhaOCR(
+                texto: linha.text.trim(),
+                caixa: linha.boundingBox,
+              ),
+            );
+          }
+        }
+      }
+
+      // --------------------------------------------------------
+      // ORDENA DE CIMA PARA BAIXO
+      // --------------------------------------------------------
+
+      linhas.sort(
+        (a, b) {
+          final y =
+              a.caixa.top.compareTo(
+            b.caixa.top,
+          );
+
+          if (y != 0) {
+            return y;
+          }
+
+          return a.caixa.left.compareTo(
+            b.caixa.left,
+          );
+        },
+      );
+
+      // ========================================================
+      // REGEX CORRETA DO PREÇO
+      // ========================================================
+
+      final regexPreco = RegExp(
+        r'(?:R\$\s*)?\d{1,3}(?:\.\d{3})*,\d{2}',
+        caseSensitive: false,
+      );
+
+      String preco = '';
+      double precoBottom = 0;
+
+      // ========================================================
+      // PROCURAR PREÇO
+      // ========================================================
+
+      for (final linha in linhas) {
+        final match =
+            regexPreco.firstMatch(
+          linha.texto,
+        );
+
+        if (match != null) {
+          final valor =
+              match.group(0) ?? '';
+
+          if (valor.isNotEmpty) {
+            preco =
+                _normalizarPreco(valor);
+
+            precoBottom =
+                linha.caixa.bottom;
+
+            break;
+          }
+        }
+      }
+
+      // ========================================================
+      // PROCURAR NOME
+      // ========================================================
+
+      final partes = <String>[];
+
+      if (precoBottom > 0) {
+        double ultimoBottom =
+            precoBottom;
+
+        for (final linha in linhas) {
+          // Ignora textos acima do preço
+          if (linha.caixa.top <
+              precoBottom - 2) {
+            continue;
+          }
+
+          // Se houver um espaço muito grande,
+          // provavelmente começou outra área
+          if (linha.caixa.top -
+                      ultimoBottom >
+                  85 &&
+              partes.isNotEmpty) {
+            break;
+          }
+
+          final original =
+              linha.texto;
+
+          // ----------------------------------------------------
+          // PRIMEIRA FILTRAGEM
+          // ----------------------------------------------------
+
+          if (_ehInterface(original)) {
+            if (partes.isNotEmpty) {
+              break;
+            }
+
+            continue;
+          }
+
+          final limpa =
+              _limparLinha(original);
+
+          if (limpa.isEmpty) {
+            continue;
+          }
+
+          // ----------------------------------------------------
+          // SEGUNDA FILTRAGEM
+          // ----------------------------------------------------
+
+          if (_ehInterface(limpa)) {
+            if (partes.isNotEmpty) {
+              break;
+            }
+
+            continue;
+          }
+
+          // ----------------------------------------------------
+          // NÃO DEIXA PREÇO ENTRAR NO NOME
+          // ----------------------------------------------------
+
+          if (regexPreco.hasMatch(limpa)) {
+            continue;
+          }
+
+          // ----------------------------------------------------
+          // IGNORA TEXTOS MUITO PEQUENOS
+          // ----------------------------------------------------
+
+          if (limpa.length < 4) {
+            continue;
+          }
+
+          partes.add(limpa);
+
+          ultimoBottom =
+              linha.caixa.bottom;
+
+          // Normalmente o título fica
+          // em poucas linhas
+          if (partes.length >= 5) {
+            break;
+          }
+        }
+      }
+
+      // ========================================================
+      // FALLBACK
+      // ========================================================
+
+      if (partes.isEmpty) {
+        final candidatos = <String>[];
+
+        for (final linha in linhas) {
+          String texto =
+              _limparLinha(
+            linha.texto,
+          );
 
           if (texto.isEmpty) {
             continue;
           }
 
-          linhas.add(
-            _LinhaOCR(
-              texto: texto,
-              caixa: linha.boundingBox,
-            ),
-          );
-        }
-      }
+          if (_ehInterface(texto)) {
+            continue;
+          }
 
-      // --------------------------------------------------------
-      // ORDENAR DE CIMA PARA BAIXO
-      // --------------------------------------------------------
+          if (regexPreco.hasMatch(texto)) {
+            continue;
+          }
 
-      linhas.sort((a, b) {
-        final int y =
-            a.caixa.top.compareTo(
-          b.caixa.top,
-        );
-
-        if (y != 0) {
-          return y;
+          if (texto.length >= 8) {
+            candidatos.add(texto);
+          }
         }
 
-        return a.caixa.left.compareTo(
-          b.caixa.left,
-        );
-      });
-
-      // ========================================================
-      // ENCONTRAR PREÇO
-      // ========================================================
-
-      String preco = '';
-
-      int indicePreco = -1;
-
-      for (int i = 0;
-          i < linhas.length;
-          i++) {
-        final String valor =
-            _extrairPreco(
-          linhas[i].texto,
-        );
-
-        if (valor.isNotEmpty) {
-          preco = valor;
-          indicePreco = i;
-          break;
+        // Pega até 3 linhas úteis
+        for (final candidato
+            in candidatos.take(3)) {
+          partes.add(candidato);
         }
       }
 
       // ========================================================
-      // MONTAR NOME DO PRODUTO
-      // ========================================================
-
-      final List<String> partesNome =
-          [];
-
-      // --------------------------------------------------------
-      // CASO 1:
-      //
-      // PREÇO E NOME ESTÃO NA MESMA LINHA
-      //
-      // Exemplo:
-      //
-      // R$397,00 Projetor VEVSHAO A12
-      //
-      // ou:
-      //
-      // Projetor VEVSHAO A12 R$397,00
-      // --------------------------------------------------------
-
-      if (indicePreco >= 0) {
-        final String linhaComPreco =
-            linhas[indicePreco].texto;
-
-        final String restante =
-            _removerPrecoDaLinha(
-          linhaComPreco,
-        );
-
-        final String restanteLimpo =
-            _limparLinha(restante);
-
-        if (restanteLimpo.isNotEmpty &&
-            !_ehInterface(restanteLimpo) &&
-            restanteLimpo.length >= 4) {
-          partesNome.add(
-            restanteLimpo,
-          );
-        }
-      }
-
-      // ========================================================
-      // CASO 2:
-      //
-      // O TÍTULO CONTINUA NAS LINHAS ABAIXO DO PREÇO
-      // ========================================================
-
-      if (indicePreco >= 0) {
-        for (int i = indicePreco + 1;
-            i < linhas.length;
-            i++) {
-          final String original =
-              linhas[i].texto.trim();
-
-          if (original.isEmpty) {
-            continue;
-          }
-
-          // ----------------------------------------------------
-          // PARAR AO ENCONTRAR ELEMENTOS DE INTERFACE
-          // ----------------------------------------------------
-
-          final String originalMinusculo =
-              original.toLowerCase();
-
-          if (originalMinusculo.contains(
-                'afiliados',
-              ) ||
-              originalMinusculo.contains(
-                'vendido',
-              ) ||
-              originalMinusculo.contains(
-                'avaliacoes',
-              ) ||
-              originalMinusculo.contains(
-                'avaliações',
-              ) ||
-              originalMinusculo.contains(
-                'aprenda com outros criadores',
-              ) ||
-              originalMinusculo.contains(
-                'compartilhe para ganhar',
-              )) {
-            break;
-          }
-
-          // ----------------------------------------------------
-          // NÃO PEGAR PORCENTAGEM
-          // ----------------------------------------------------
-
-          if (RegExp(
-            r'\d+(?:[.,]\d+)?\s*%',
-          ).hasMatch(original)) {
-            continue;
-          }
-
-          // ----------------------------------------------------
-          // LIMPAR
-          // ----------------------------------------------------
-
-          String linha =
-              _limparLinha(original);
-
-          linha =
-              _removerPrecoDaLinha(
-            linha,
-          );
-
-          linha =
-              _limparLinha(linha);
-
-          if (linha.isEmpty) {
-            continue;
-          }
-
-          // ----------------------------------------------------
-          // NÃO PEGAR INTERFACE
-          // ----------------------------------------------------
-
-          if (_ehInterface(linha)) {
-            break;
-          }
-
-          // ----------------------------------------------------
-          // NÃO PEGAR SOMENTE NÚMEROS
-          // ----------------------------------------------------
-
-          if (RegExp(
-            r'^[\d\s.,/%\-]+$',
-          ).hasMatch(linha)) {
-            continue;
-          }
-
-          // ----------------------------------------------------
-          // TAMANHO
-          // ----------------------------------------------------
-
-          if (linha.length < 4) {
-            continue;
-          }
-
-          if (linha.length > 120) {
-            continue;
-          }
-
-          partesNome.add(linha);
-
-          // Títulos normalmente possuem poucas linhas.
-          if (partesNome.length >= 4) {
-            break;
-          }
-        }
-      }
-
-      // ========================================================
-      // CASO 3:
-      //
-      // SE NÃO ENCONTROU PREÇO, TENTAR ENCONTRAR O TÍTULO
-      // SEM CONFUNDIR O PREÇO COM O NOME.
-      // ========================================================
-
-      if (partesNome.isEmpty) {
-        for (final linhaOCR in linhas) {
-          String linha =
-              _limparLinha(
-            linhaOCR.texto,
-          );
-
-          if (linha.isEmpty) {
-            continue;
-          }
-
-          // ----------------------------------------------------
-          // Se houver preço nessa linha, retirar primeiro.
-          // ----------------------------------------------------
-
-          linha =
-              _removerPrecoDaLinha(
-            linha,
-          );
-
-          linha =
-              _limparLinha(linha);
-
-          if (linha.isEmpty) {
-            continue;
-          }
-
-          if (_ehInterface(linha)) {
-            continue;
-          }
-
-          if (RegExp(
-            r'\d+(?:[.,]\d+)?\s*%',
-          ).hasMatch(linha)) {
-            continue;
-          }
-
-          if (RegExp(
-            r'^[\d\s.,/%\-]+$',
-          ).hasMatch(linha)) {
-            continue;
-          }
-
-          if (linha.length < 8) {
-            continue;
-          }
-
-          if (linha.length > 120) {
-            continue;
-          }
-
-          partesNome.add(linha);
-
-          if (partesNome.length >= 2) {
-            break;
-          }
-        }
-      }
-
-      // ========================================================
-      // MONTAR NOME
+      // MONTA NOME
       // ========================================================
 
       String nome =
-          partesNome.join(' ');
-
-      nome =
-          _ajustarNomeProduto(nome);
-
-      // ========================================================
-      // PROTEÇÃO FINAL:
-      // NUNCA DEIXAR R$ DENTRO DO NOME
-      // ========================================================
-
-      nome =
-          _removerPrecoDaLinha(nome);
-
-      nome =
-          _limparLinha(nome);
-
-      // --------------------------------------------------------
-      // REMOVER PORCENTAGEM
-      // --------------------------------------------------------
-
-      nome = nome.replaceAll(
-        RegExp(
-          r'\b\d{1,3}(?:[.,]\d+)?\s*%',
-        ),
-        ' ',
+          _ajustarNomeProduto(
+        partes.join(' '),
       );
 
-      // --------------------------------------------------------
-      // REMOVER COMISSÃO EXTRA
-      // --------------------------------------------------------
+      // ========================================================
+      // SEGUNDA PROTEÇÃO
+      // ========================================================
 
-      nome = nome.replaceAll(
-        RegExp(
-          r'comiss[aã]o\s*ex\s*tra',
-          caseSensitive: false,
-        ),
-        ' ',
-      );
-
-      // --------------------------------------------------------
-      // ESPAÇOS
-      // --------------------------------------------------------
-
-      nome = nome.replaceAll(
-        RegExp(r'\s+'),
-        ' ',
-      ).trim();
+      nome = _ajustarNomeProduto(nome);
 
       // ========================================================
       // RECORTAR FOTO
       // ========================================================
 
-      final File? foto =
+      final foto =
           await _recortarAreaDoProduto(
         caminho,
       );
@@ -929,12 +733,25 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
+      // ========================================================
+      // ATUALIZAR TELA
+      // ========================================================
+
       setState(() {
-        _textoLido = resultado.text;
-        _nomeProduto = nome;
-        _preco = preco;
-        _imagemRecortada = foto;
-        _carregando = false;
+        _textoLido =
+            resultado.text;
+
+        _nomeProduto =
+            nome;
+
+        _preco =
+            preco;
+
+        _imagemRecortada =
+            foto;
+
+        _carregando =
+            false;
       });
     } catch (e) {
       if (!mounted) {
@@ -946,7 +763,7 @@ class _HomePageState extends State<HomePage> {
       });
 
       _mostrarMensagem(
-        'Erro ao reconhecer o print.\n\n$e',
+        'Erro ao reconhecer o print.',
       );
     } finally {
       await reconhecedor.close();
@@ -954,7 +771,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================
-  // LINK
+  // OBTER LINK
   // ============================================================
 
   String _obterLink() {
@@ -967,8 +784,7 @@ class _HomePageState extends State<HomePage> {
 
     if (!link.startsWith('http://') &&
         !link.startsWith('https://')) {
-      link =
-          'https://$link';
+      link = 'https://$link';
     }
 
     return link;
@@ -979,22 +795,12 @@ class _HomePageState extends State<HomePage> {
   // ============================================================
 
   String _gerarTextoDivulgacao() {
-    final String nome =
-        _nomeProduto.isEmpty
-            ? 'Produto Shopee'
-            : _nomeProduto;
-
-    final String preco =
-        _preco.isEmpty
-            ? 'Confira o preço'
-            : _preco;
-
     return '''
-🛍️ $nome
+🛍️ ${_nomeProduto.isEmpty ? 'Produto Shopee' : _nomeProduto}
 
 🔥 OFERTA NA SHOPEE 🔥
 
-💰 $preco
+💰 ${_preco.isEmpty ? 'Confira o preço' : _preco}
 
 👇 Confira aqui:
 ${_obterLink()}
@@ -1022,33 +828,23 @@ ${_obterLink()}
       return;
     }
 
-    final File arquivo =
+    final arquivo =
         _imagemRecortada ??
             _imagemOriginal!;
 
-    try {
-      await SharePlus.instance.share(
-        ShareParams(
-          text:
-              _gerarTextoDivulgacao(),
-          files: [
-            XFile(
-              arquivo.path,
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      _mostrarMensagem(
-        'Não foi possível compartilhar.\n\n$e',
-      );
-    }
+    await SharePlus.instance.share(
+      ShareParams(
+        text:
+            _gerarTextoDivulgacao(),
+        files: [
+          XFile(arquivo.path),
+        ],
+      ),
+    );
   }
 
   // ============================================================
-  // COMPARTILHAR TEXTO
+  // COMPARTILHAR SOMENTE TEXTO
   // ============================================================
 
   Future<void> _compartilharTexto() async {
@@ -1059,20 +855,12 @@ ${_obterLink()}
       return;
     }
 
-    try {
-      await SharePlus.instance.share(
-        ShareParams(
-          text:
-              _gerarTextoDivulgacao(),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      _mostrarMensagem(
-        'Não foi possível compartilhar.\n\n$e',
-      );
-    }
+    await SharePlus.instance.share(
+      ShareParams(
+        text:
+            _gerarTextoDivulgacao(),
+      ),
+    );
   }
 
   // ============================================================
@@ -1082,20 +870,16 @@ ${_obterLink()}
   void _mostrarMensagem(
     String texto,
   ) {
-    if (!mounted) return;
-
     ScaffoldMessenger.of(context)
         .showSnackBar(
       SnackBar(
         content: Text(texto),
-        duration:
-            const Duration(seconds: 4),
       ),
     );
   }
 
   // ============================================================
-  // CAMPO LINK
+  // CAMPO DO LINK
   // ============================================================
 
   Widget _campoLink() {
@@ -1107,16 +891,12 @@ ${_obterLink()}
       child: TextField(
         controller:
             _linkController,
-        keyboardType:
-            TextInputType.url,
         decoration:
             InputDecoration(
           hintText:
               'Link do produto / link de afiliado',
           prefixIcon:
-              const Icon(
-            Icons.link,
-          ),
+              const Icon(Icons.link),
           border:
               OutlineInputBorder(
             borderRadius:
@@ -1124,9 +904,6 @@ ${_obterLink()}
               18,
             ),
           ),
-          filled: true,
-          fillColor:
-              Colors.white,
         ),
       ),
     );
@@ -1150,17 +927,7 @@ ${_obterLink()}
             BorderRadius.circular(
           20,
         ),
-        color:
-            Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black
-                .withOpacity(0.15),
-            blurRadius: 5,
-            offset:
-                const Offset(0, 3),
-          ),
-        ],
+        color: Colors.white,
       ),
       child: ClipRRect(
         borderRadius:
@@ -1198,15 +965,6 @@ ${_obterLink()}
             BorderRadius.circular(
           22,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black
-                .withOpacity(0.15),
-            blurRadius: 5,
-            offset:
-                const Offset(0, 3),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment:
@@ -1293,14 +1051,14 @@ ${_obterLink()}
   }
 
   // ============================================================
-  // TELA
+  // TELA PRINCIPAL
   // ============================================================
 
   @override
   Widget build(
     BuildContext context,
   ) {
-    final bool temImagem =
+    final temImagem =
         _imagemOriginal != null;
 
     return Scaffold(
@@ -1310,8 +1068,7 @@ ${_obterLink()}
         foregroundColor:
             Colors.white,
         centerTitle: true,
-        title:
-            const Text(
+        title: const Text(
           'Divulgador Shopee',
           style: TextStyle(
             fontSize: 30,
@@ -1337,8 +1094,7 @@ ${_obterLink()}
 
             Padding(
               padding:
-                  const EdgeInsets
-                      .symmetric(
+                  const EdgeInsets.symmetric(
                 horizontal: 16,
               ),
               child: SizedBox(
@@ -1353,8 +1109,7 @@ ${_obterLink()}
                           : _escolherPrint,
                   icon:
                       const Icon(
-                    Icons
-                        .image_outlined,
+                    Icons.image_outlined,
                     size: 32,
                   ),
                   label:
@@ -1373,30 +1128,43 @@ ${_obterLink()}
               ),
             ),
 
+            // --------------------------------------------------
+            // CARREGANDO
+            // --------------------------------------------------
+
             if (_carregando)
               const Padding(
                 padding:
-                    EdgeInsets.all(
-                  35,
-                ),
+                    EdgeInsets.all(35),
                 child:
                     CircularProgressIndicator(),
               ),
+
+            // --------------------------------------------------
+            // FOTO
+            // --------------------------------------------------
 
             if (!_carregando &&
                 temImagem)
               _foto(),
 
+            // --------------------------------------------------
+            // INFORMAÇÕES
+            // --------------------------------------------------
+
             if (!_carregando &&
                 temImagem)
               _informacoes(),
+
+            // --------------------------------------------------
+            // LIMPAR
+            // --------------------------------------------------
 
             if (!_carregando &&
                 temImagem)
               Padding(
                 padding:
-                    const EdgeInsets
-                        .symmetric(
+                    const EdgeInsets.symmetric(
                   horizontal: 16,
                 ),
                 child: SizedBox(
@@ -1409,8 +1177,7 @@ ${_obterLink()}
                         _limparTudo,
                     icon:
                         const Icon(
-                      Icons
-                          .delete_outline,
+                      Icons.delete_outline,
                     ),
                     label:
                         const Text(
@@ -1425,19 +1192,21 @@ ${_obterLink()}
                 ),
               ),
 
+            // --------------------------------------------------
+            // COMPARTILHAMENTO
+            // --------------------------------------------------
+
             if (!_carregando &&
                 temImagem)
               Padding(
                 padding:
-                    const EdgeInsets
-                        .fromLTRB(
+                    const EdgeInsets.fromLTRB(
                   16,
                   18,
                   16,
                   30,
                 ),
-                child:
-                    Column(
+                child: Column(
                   children: [
                     SizedBox(
                       width:
@@ -1464,8 +1233,7 @@ ${_obterLink()}
                             ElevatedButton
                                 .styleFrom(
                           backgroundColor:
-                              Colors
-                                  .deepOrange,
+                              Colors.deepOrange,
                           foregroundColor:
                               Colors.white,
                         ),
@@ -1502,6 +1270,10 @@ ${_obterLink()}
                   ],
                 ),
               ),
+
+            // --------------------------------------------------
+            // TEXTO INICIAL
+            // --------------------------------------------------
 
             if (!temImagem &&
                 !_carregando)
